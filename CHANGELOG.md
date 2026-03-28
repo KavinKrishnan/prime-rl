@@ -2,6 +2,7 @@
 
 Documenting changes which affect configuration usage patterns (added/moved/removed/renamed fields, notable logic changes).
 
+- [model.mtp] (NEW): Added auxiliary multi-token prediction (MTP) training configuration. Introduces `[model.mtp]` sub-config with `num_layers` (int, default 1) and `loss_scaling_factor` (float, default 0.2). When set, enables training of existing model draft/MTP layers with an auxiliary cross-entropy loss during RL/SFT; inference behavior unchanged. (2026-03-28)
 - **`loss_impl = "quack_fused"` (SFT)**: Added `quack_fused` option for the SFT `loss_impl` field. Uses quack-kernels for chunked linear + cross-entropy with CuTe DSL CUDA kernels, avoiding full logits materialization. Requires `quack-kernels` package. Does not support Gemma logit softcapping. Custom model impl (`model.impl = "custom"`) also gains quack RMSNorm acceleration on CUDA automatically. (2026-03-26)
 - **`model.tp` (trainer `ModelConfig`)**: Removed from the trainer model config. Existing trainer configs must delete this field; it is no longer accepted. (2026-03-26)
 - **`orchestrator.env[].num_workers`**: Added configurable env server worker count (`int | "auto"`, default: `"auto"`). When `"auto"`, scales based on concurrency (1 worker per 256 concurrent rollouts). Only used when the orchestrator spawns the env server (i.e. `address` is not set). (2026-03-25)

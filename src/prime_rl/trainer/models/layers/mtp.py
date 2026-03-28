@@ -379,6 +379,8 @@ def _run_qwen_next_container_layer(
         cache_position=cache_position,
         position_embeddings=position_embeddings,
     )
+    if isinstance(hidden_states, tuple):
+        hidden_states = hidden_states[0]
     return runtime.container.norm(hidden_states)
 
 
