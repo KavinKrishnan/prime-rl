@@ -362,7 +362,9 @@ async def orchestrate(config: OrchestratorConfig):
     # Start inference metrics collector
     inference_metrics_collector = None
     if config.collect_inference_metrics:
-        inference_metrics_collector = InferenceMetricsCollector(inference_pool)
+        inference_metrics_collector = InferenceMetricsCollector(
+            inference_pool, poll_interval=config.inference_metrics_poll_interval
+        )
         await inference_metrics_collector.start()
 
     # Check health of teacher inference server if configured
@@ -663,10 +665,6 @@ async def orchestrate(config: OrchestratorConfig):
         val_outputs = val_task.result()
 
         step_time = time.perf_counter() - step_start_time
-
-        # Snapshot inference server metrics
-        if inference_metrics_collector is not None:
-            await inference_metrics_collector.collect()
 
         # Gather metrics in dataframes
         results_df = pd.DataFrame(

@@ -915,6 +915,14 @@ class OrchestratorConfig(BaseConfig):
         ),
     ] = True
 
+    inference_metrics_poll_interval: Annotated[
+        float,
+        Field(
+            gt=0,
+            description="How often (in seconds) to poll inference server /metrics endpoints.",
+        ),
+    ] = 5.0
+
     @model_validator(mode="after")
     def validate_unique_filter_types(self):
         types = [f.type for f in self.filters]
