@@ -4,6 +4,7 @@ import asyncio
 import time
 from collections import deque
 
+import wandb
 from httpx import AsyncClient
 from prometheus_client.parser import text_string_to_metric_families
 
@@ -37,13 +38,13 @@ def parse_prometheus_text(
 
 
 class InferenceMetricsCollector:
-    """Polls Prometheus /metrics from inference servers and exposes per-server metrics.
+    """Polls Prometheus /metrics from inference servers and logs to W&B on a time-based axis.
 
     Reads the current admin_clients from the inference pool on each poll, so it
     automatically adapts when servers join or leave (elastic pools).
 
-    Metrics are collected in the background every `poll_interval` seconds.
-    `get_metrics()` returns the running average over the last `window_size` fetches.
+    Metrics are collected and logged every `poll_interval` seconds, independently
+    of training steps. The x-axis is wall-clock seconds since the collector started.
 
     For counter metrics (prompt/generation tokens), rates are computed between
     consecutive polls and averaged, matching vLLM's own throughput calculation.
@@ -60,7 +61,6 @@ class InferenceMetricsCollector:
         "vllm:generation_tokens",
     }
 
-    # Counter names mapped to the rate metric name logged to W&B
     COUNTER_RATE_NAMES = {
         "vllm:prompt_tokens": "prompt_throughput_tps",
         "vllm:generation_tokens": "generation_throughput_tps",
@@ -75,17 +75,21 @@ class InferenceMetricsCollector:
         self._prev_counters: dict[HistoryKey, tuple[float, float]] = {}  # key -> (timestamp, value)
         self._active_urls: set[str] = set()
         self._task: asyncio.Task | None = None
+        self._start_time: float = 0.0
 
     async def start(self):
+        self._start_time = time.monotonic()
+        wandb.define_metric("inference/*", step_metric="inference_elapsed_s")
+
         async def poll_loop():
             while True:
-                await self.collect()
+                await self._collect_and_log()
                 await asyncio.sleep(self.poll_interval)
 
         self._task = asyncio.create_task(poll_loop())
 
-    async def collect(self):
-        """Fetch /metrics from all servers concurrently and append to history."""
+    async def _collect_and_log(self):
+        """Fetch /metrics from all servers, update history, and log to W&B."""
         admin_clients = self.inference_pool.admin_clients
         now = time.monotonic()
 
@@ -143,11 +147,14 @@ class InferenceMetricsCollector:
                     self._history[rate_key] = deque(maxlen=self.window_size)
                 self._history[rate_key].append(rate)
 
-    def get_metrics(self) -> dict[str, float]:
-        """Return per-server, per-engine running averages formatted for W&B logging.
+        # Log to W&B
+        metrics = self._get_metrics()
+        if metrics:
+            metrics["inference_elapsed_s"] = now - self._start_time
+            wandb.log(metrics)
 
-        Keys are structured as `inference/<metric_name>/server_<idx>_engine_<idx>`
-        """
+    def _get_metrics(self) -> dict[str, float]:
+        """Return per-server, per-engine running averages."""
         metrics: dict[str, float] = {}
         sorted_urls = sorted(self._active_urls)
         url_to_idx = {url: i for i, url in enumerate(sorted_urls)}

@@ -782,8 +782,6 @@ async def orchestrate(config: OrchestratorConfig):
             **event_loop_lag_monitor.get_metrics(),
             # Rollout filter metrics
             **filter_metrics,
-            # Inference server metrics
-            **(inference_metrics_collector.get_metrics() if inference_metrics_collector is not None else {}),
             # W&B axis
             "step": progress.step,
         }
