@@ -30,6 +30,7 @@ from transformers.utils import TransformersKwargs, auto_docstring, can_return_tu
 
 from prime_rl.trainer.models.base import PreTrainedModelPrimeRL
 from prime_rl.trainer.models.layers.lm_head import PrimeLmOutput
+from prime_rl.trainer.models.layers.norms import RMSNorm, RMSNormConfig
 
 # flash-attention-2
 try:
@@ -50,26 +51,8 @@ except ImportError:
 
 
 # ---------------------------------------------------------------------------
-# Gemma4 RMSNorm — torch-native to match vLLM's kernel numerics.
-# The shared RMSNorm uses quack kernels on Hopper+ which have slightly
-# different bf16 accumulation, causing mismatch KL with vLLM inference.
+# Norms
 # ---------------------------------------------------------------------------
-
-
-class Gemma4RMSNorm(nn.Module):
-    """RMSNorm with learnable scale, torch-native (no quack)."""
-
-    def __init__(self, hidden_size: int, eps: float = 1e-6):
-        super().__init__()
-        self.weight = nn.Parameter(torch.ones(hidden_size))
-        self.variance_epsilon = eps
-
-    def forward(self, hidden_states: torch.Tensor) -> torch.Tensor:
-        input_dtype = hidden_states.dtype
-        hidden_states = hidden_states.to(torch.float32)
-        variance = hidden_states.pow(2).mean(-1, keepdim=True)
-        hidden_states = hidden_states * torch.rsqrt(variance + self.variance_epsilon)
-        return (self.weight * hidden_states.to(input_dtype)).to(input_dtype)
 
 
 class Gemma4RMSNormNoScale(nn.Module):
@@ -233,8 +216,8 @@ class Gemma4Attention(nn.Module):
         )
 
         # QKV norms
-        self.q_norm = Gemma4RMSNorm(self.head_dim, eps=config.rms_norm_eps)
-        self.k_norm = Gemma4RMSNorm(self.head_dim, eps=config.rms_norm_eps)
+        self.q_norm = RMSNorm(RMSNormConfig(hidden_size=self.head_dim, eps=config.rms_norm_eps))
+        self.k_norm = RMSNorm(RMSNormConfig(hidden_size=self.head_dim, eps=config.rms_norm_eps))
         self.v_norm = Gemma4RMSNormNoScale(self.head_dim, eps=config.rms_norm_eps)
 
         # Flash attention
@@ -380,10 +363,12 @@ class Gemma4DecoderLayer(GradientCheckpointingLayer):
         self.mlp = Gemma4MLP(config)
 
         # 4 layernorms
-        self.input_layernorm = Gemma4RMSNorm(config.hidden_size, eps=config.rms_norm_eps)
-        self.post_attention_layernorm = Gemma4RMSNorm(config.hidden_size, eps=config.rms_norm_eps)
-        self.pre_feedforward_layernorm = Gemma4RMSNorm(config.hidden_size, eps=config.rms_norm_eps)
-        self.post_feedforward_layernorm = Gemma4RMSNorm(config.hidden_size, eps=config.rms_norm_eps)
+        self.input_layernorm = RMSNorm(RMSNormConfig(hidden_size=config.hidden_size, eps=config.rms_norm_eps))
+        self.post_attention_layernorm = RMSNorm(RMSNormConfig(hidden_size=config.hidden_size, eps=config.rms_norm_eps))
+        self.pre_feedforward_layernorm = RMSNorm(RMSNormConfig(hidden_size=config.hidden_size, eps=config.rms_norm_eps))
+        self.post_feedforward_layernorm = RMSNorm(
+            RMSNormConfig(hidden_size=config.hidden_size, eps=config.rms_norm_eps)
+        )
 
         # Per-layer scalar
         self.register_buffer("layer_scalar", torch.ones(1))
@@ -548,7 +533,7 @@ class Gemma4Model(Gemma4PreTrainedModel):
         else:
             layer_cls = Gemma4DecoderLayer
         self.layers = nn.ModuleList([layer_cls(config, layer_idx) for layer_idx in range(config.num_hidden_layers)])
-        self.norm = Gemma4RMSNorm(config.hidden_size, eps=config.rms_norm_eps)
+        self.norm = RMSNorm(RMSNormConfig(hidden_size=config.hidden_size, eps=config.rms_norm_eps))
         self.rotary_emb = Gemma4DualRotaryEmbedding(config)
         self.gradient_checkpointing = False
 

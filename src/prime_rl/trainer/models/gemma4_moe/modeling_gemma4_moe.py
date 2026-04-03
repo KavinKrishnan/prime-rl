@@ -27,7 +27,6 @@ from prime_rl.trainer.models.gemma4.modeling_gemma4 import (
     Gemma4Attention,
     Gemma4DualRotaryEmbedding,
     Gemma4MLP,
-    Gemma4RMSNorm,
     Gemma4RMSNormNoScale,
     Gemma4ScaledWordEmbedding,
     _compute_default_rope_parameters,
@@ -40,6 +39,7 @@ from prime_rl.trainer.models.gemma4_moe.converting_gemma4_moe import (
     convert_prime_to_hf,
 )
 from prime_rl.trainer.models.layers.lm_head import PrimeLmOutput
+from prime_rl.trainer.models.layers.norms import RMSNorm, RMSNormConfig
 
 # ---------------------------------------------------------------------------
 # Gemma4 MoE Router
@@ -161,19 +161,27 @@ class Gemma4MoeDecoderLayer(GradientCheckpointingLayer):
         self.mlp = Gemma4MLP(config)
 
         # Standard 4 layernorms
-        self.input_layernorm = Gemma4RMSNorm(config.hidden_size, eps=config.rms_norm_eps)
-        self.post_attention_layernorm = Gemma4RMSNorm(config.hidden_size, eps=config.rms_norm_eps)
-        self.pre_feedforward_layernorm = Gemma4RMSNorm(config.hidden_size, eps=config.rms_norm_eps)
-        self.post_feedforward_layernorm = Gemma4RMSNorm(config.hidden_size, eps=config.rms_norm_eps)
+        self.input_layernorm = RMSNorm(RMSNormConfig(hidden_size=config.hidden_size, eps=config.rms_norm_eps))
+        self.post_attention_layernorm = RMSNorm(RMSNormConfig(hidden_size=config.hidden_size, eps=config.rms_norm_eps))
+        self.pre_feedforward_layernorm = RMSNorm(RMSNormConfig(hidden_size=config.hidden_size, eps=config.rms_norm_eps))
+        self.post_feedforward_layernorm = RMSNorm(
+            RMSNormConfig(hidden_size=config.hidden_size, eps=config.rms_norm_eps)
+        )
 
         # MoE components
         self.router = Gemma4Router(config)
         self.experts = Gemma4Experts(config, use_grouped_mm=getattr(config, "use_grouped_mm", True))
 
         # Extra norms for MoE parallel path
-        self.post_feedforward_layernorm_1 = Gemma4RMSNorm(config.hidden_size, eps=config.rms_norm_eps)
-        self.post_feedforward_layernorm_2 = Gemma4RMSNorm(config.hidden_size, eps=config.rms_norm_eps)
-        self.pre_feedforward_layernorm_2 = Gemma4RMSNorm(config.hidden_size, eps=config.rms_norm_eps)
+        self.post_feedforward_layernorm_1 = RMSNorm(
+            RMSNormConfig(hidden_size=config.hidden_size, eps=config.rms_norm_eps)
+        )
+        self.post_feedforward_layernorm_2 = RMSNorm(
+            RMSNormConfig(hidden_size=config.hidden_size, eps=config.rms_norm_eps)
+        )
+        self.pre_feedforward_layernorm_2 = RMSNorm(
+            RMSNormConfig(hidden_size=config.hidden_size, eps=config.rms_norm_eps)
+        )
 
         # Per-layer scalar
         self.register_buffer("layer_scalar", torch.ones(1))
@@ -304,7 +312,7 @@ class Gemma4MoeModel(Gemma4MoePreTrainedModel):
         self.layers = nn.ModuleList(
             [Gemma4MoeDecoderLayer(config, layer_idx) for layer_idx in range(config.num_hidden_layers)]
         )
-        self.norm = Gemma4RMSNorm(config.hidden_size, eps=config.rms_norm_eps)
+        self.norm = RMSNorm(RMSNormConfig(hidden_size=config.hidden_size, eps=config.rms_norm_eps))
         self.rotary_emb = Gemma4DualRotaryEmbedding(config)
         self.gradient_checkpointing = False
         self.post_init()
