@@ -282,7 +282,10 @@ class Gemma4Attention(nn.Module):
                 start, end = cu_seqlens[i].item(), cu_seqlens[i + 1].item()
                 seq_len = end - start
                 causal = torch.tril(torch.zeros(seq_len, seq_len, device=q.device, dtype=q.dtype))
-                causal.masked_fill_(torch.triu(torch.ones(seq_len, seq_len, device=q.device, dtype=torch.bool), diagonal=1), float("-inf"))
+                causal.masked_fill_(
+                    torch.triu(torch.ones(seq_len, seq_len, device=q.device, dtype=torch.bool), diagonal=1),
+                    float("-inf"),
+                )
                 mask[start:end, start:end] = causal
             out = torch.nn.functional.scaled_dot_product_attention(q, k, v, attn_mask=mask, scale=1.0)
         else:
@@ -329,7 +332,9 @@ class Gemma4Attention(nn.Module):
         if self.head_dim > 256:
             attn_output = self._compute_sdpa_attention(query_states[0], key_states[0], value_states[0], cu_seqlens)
         else:
-            attn_output = self._compute_flash_attention(query_states[0], key_states[0], value_states[0], cu_seqlens, max_seqlen)
+            attn_output = self._compute_flash_attention(
+                query_states[0], key_states[0], value_states[0], cu_seqlens, max_seqlen
+            )
         attn_output = attn_output.contiguous().view(1, attn_output.shape[0], -1)
         attn_output = self.o_proj(attn_output)
         return attn_output, None
@@ -433,8 +438,10 @@ def _remap_lm_keys(state_dict: dict[str, Tensor], to_flat: bool = True) -> None:
     VISION_PREFIXES = ("model.vision_tower.", "model.embed_vision.")
     src = "model.language_model." if to_flat else "model."
     dst = "model." if to_flat else "model.language_model."
-    for k in [k for k in list(state_dict.keys()) if k.startswith(src) and not any(k.startswith(p) for p in VISION_PREFIXES)]:
-        state_dict[dst + k[len(src):]] = state_dict.pop(k)
+    for k in [
+        k for k in list(state_dict.keys()) if k.startswith(src) and not any(k.startswith(p) for p in VISION_PREFIXES)
+    ]:
+        state_dict[dst + k[len(src) :]] = state_dict.pop(k)
 
 
 # ---------------------------------------------------------------------------
