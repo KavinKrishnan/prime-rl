@@ -120,6 +120,9 @@ MODEL_TOOL_CALL_PARSER: dict[str, str] = {
     # NemotronH
     "nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-BF16": "qwen3_coder",
     "nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16": "qwen3_coder",
+    # Gemma4
+    "google/gemma-4-26B-A4B-it": "gemma4",
+    "google/gemma-4-31B-it": "gemma4",
 }
 
 
