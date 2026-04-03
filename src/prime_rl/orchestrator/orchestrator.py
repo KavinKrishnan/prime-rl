@@ -360,12 +360,8 @@ async def orchestrate(config: OrchestratorConfig):
     logger.success("Inference pool ready")
 
     # Start inference metrics collector
-    inference_metrics_collector = None
-    if config.collect_inference_metrics:
-        inference_metrics_collector = InferenceMetricsCollector(
-            inference_pool, poll_interval=config.inference_metrics_poll_interval
-        )
-        await inference_metrics_collector.start()
+    inference_metrics_collector = InferenceMetricsCollector(inference_pool)
+    await inference_metrics_collector.start()
 
     # Check health of teacher inference server if configured
     if config.teacher_model and teacher_inference_pool:
@@ -915,12 +911,11 @@ async def orchestrate(config: OrchestratorConfig):
     if teacher_inference_pool is not None:
         await teacher_inference_pool.stop()
 
+    # Stop inference metrics collector
+    await inference_metrics_collector.stop()
+
     # Cancel event loop lag monitor task
     event_loop_lag_monitor_task.cancel()
-
-    # Stop inference metrics collector
-    if inference_metrics_collector is not None:
-        await inference_metrics_collector.stop()
 
     # Shutdown env processes (also registered as atexit handler for crash safety)
     atexit.unregister(_cleanup_env_processes)

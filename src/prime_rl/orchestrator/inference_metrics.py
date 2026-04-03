@@ -11,29 +11,26 @@ from prometheus_client.parser import text_string_to_metric_families
 from prime_rl.utils.client import InferencePool
 from prime_rl.utils.logger import get_logger
 
-# Key: (server_url, metric_name, engine_index)
-HistoryKey = tuple[str, str, str]
+HistoryKey = tuple[str, str]
 
 
 def parse_prometheus_text(
     text: str, gauge_names: set[str], counter_names: set[str]
-) -> tuple[dict[tuple[str, str], float], dict[tuple[str, str], float]]:
+) -> tuple[dict[str, float], dict[str, float]]:
     """Parse Prometheus exposition format text and extract metric values.
 
-    Returns (gauges, counters) dicts keyed by (metric_name, engine_index).
-    If no engine label is present, engine defaults to "0".
+    Returns (gauges, counters) dicts keyed by metric_name.
+    Aggregates across all engines by summing values.
     """
-    gauges: dict[tuple[str, str], float] = {}
-    counters: dict[tuple[str, str], float] = {}
+    gauges: dict[str, float] = {}
+    counters: dict[str, float] = {}
     for family in text_string_to_metric_families(text):
         if family.type == "gauge" and family.name in gauge_names:
             for sample in family.samples:
-                engine = sample.labels.get("engine", "0")
-                gauges[(family.name, engine)] = sample.value
+                gauges[family.name] = gauges.get(family.name, 0.0) + sample.value
         elif family.type == "counter" and family.name in counter_names:
             for sample in family.samples:
-                engine = sample.labels.get("engine", "0")
-                counters[(family.name, engine)] = sample.value
+                counters[family.name] = counters.get(family.name, 0.0) + sample.value
     return gauges, counters
 
 
@@ -43,8 +40,8 @@ class InferenceMetricsCollector:
     Reads the current admin_clients from the inference pool on each poll, so it
     automatically adapts when servers join or leave (elastic pools).
 
-    Metrics are collected and logged every `poll_interval` seconds, independently
-    of training steps. The x-axis is wall-clock seconds since the collector started.
+    Metrics are collected and logged every 5 seconds, independently of training steps.
+    The x-axis is wall-clock time (timestamp).
 
     For counter metrics (prompt/generation tokens), rates are computed between
     consecutive polls and averaged, matching vLLM's own throughput calculation.
@@ -66,25 +63,24 @@ class InferenceMetricsCollector:
         "vllm:generation_tokens": "generation_throughput_tps",
     }
 
-    def __init__(self, inference_pool: InferencePool, poll_interval: float = 5.0, window_size: int = 20):
+    POLL_INTERVAL = 5.0
+
+    def __init__(self, inference_pool: InferencePool, window_size: int = 20):
         self.inference_pool = inference_pool
-        self.poll_interval = poll_interval
         self.window_size = window_size
         self.logger = get_logger()
         self._history: dict[HistoryKey, deque[float]] = {}
-        self._prev_counters: dict[HistoryKey, tuple[float, float]] = {}  # key -> (timestamp, value)
+        self._prev_counters: dict[HistoryKey, tuple[float, float]] = {}
         self._active_urls: set[str] = set()
         self._task: asyncio.Task | None = None
-        self._start_time: float = 0.0
 
     async def start(self):
-        self._start_time = time.monotonic()
-        wandb.define_metric("inference/*", step_metric="inference_elapsed_s")
+        wandb.define_metric("inference/*", step_metric="_timestamp")
 
         async def poll_loop():
             while True:
                 await self._collect_and_log()
-                await asyncio.sleep(self.poll_interval)
+                await asyncio.sleep(self.POLL_INTERVAL)
 
         self._task = asyncio.create_task(poll_loop())
 
@@ -95,7 +91,7 @@ class InferenceMetricsCollector:
 
         async def fetch(
             client: AsyncClient,
-        ) -> tuple[str, dict[tuple[str, str], float] | None, dict[tuple[str, str], float] | None]:
+        ) -> tuple[str, dict[str, float] | None, dict[str, float] | None]:
             url = str(client.base_url)
             try:
                 response = await client.get("/metrics", timeout=5.0)
@@ -108,7 +104,6 @@ class InferenceMetricsCollector:
 
         results = await asyncio.gather(*[fetch(client) for client in admin_clients])
 
-        # Clear stale entries from servers that left the pool
         active_urls = {str(client.base_url) for client in admin_clients}
         for key in list(self._history):
             if key[0] not in active_urls:
@@ -122,8 +117,8 @@ class InferenceMetricsCollector:
             if gauges is None:
                 continue
 
-            for (metric_name, engine), value in gauges.items():
-                key = (url, metric_name, engine)
+            for metric_name, value in gauges.items():
+                key = (url, metric_name)
                 if key not in self._history:
                     self._history[key] = deque(maxlen=self.window_size)
                 self._history[key].append(value)
@@ -131,8 +126,8 @@ class InferenceMetricsCollector:
             if counters is None:
                 continue
 
-            for (metric_name, engine), value in counters.items():
-                key = (url, metric_name, engine)
+            for metric_name, value in counters.items():
+                key = (url, metric_name)
                 prev = self._prev_counters.get(key)
                 self._prev_counters[key] = (now, value)
                 if prev is None:
@@ -142,30 +137,39 @@ class InferenceMetricsCollector:
                 if dt <= 0:
                     continue
                 rate = (value - prev_value) / dt
-                rate_key = (url, self.COUNTER_RATE_NAMES[metric_name], engine)
+                rate_key = (url, self.COUNTER_RATE_NAMES[metric_name])
                 if rate_key not in self._history:
                     self._history[rate_key] = deque(maxlen=self.window_size)
                 self._history[rate_key].append(rate)
 
-        # Log to W&B
         metrics = self._get_metrics()
         if metrics:
-            metrics["inference_elapsed_s"] = now - self._start_time
             wandb.log(metrics)
 
     def _get_metrics(self) -> dict[str, float]:
-        """Return per-server, per-engine running averages."""
+        """Return per-server running averages and aggregates across all servers."""
         metrics: dict[str, float] = {}
         sorted_urls = sorted(self._active_urls)
         url_to_idx = {url: i for i, url in enumerate(sorted_urls)}
 
-        for (url, metric_name, engine), values in self._history.items():
+        aggregates: dict[str, list[float]] = {}
+
+        for (url, metric_name), values in self._history.items():
             if url not in url_to_idx or not values:
                 continue
             server_idx = url_to_idx[url]
             short_name = metric_name.removeprefix("vllm:")
             avg = sum(values) / len(values)
-            metrics[f"inference/{short_name}/server_{server_idx}_engine_{engine}"] = avg
+            metrics[f"inference/{short_name}/server_{server_idx}"] = avg
+            aggregates.setdefault(short_name, []).append(avg)
+
+        for short_name, values in aggregates.items():
+            if short_name == "kv_cache_usage_perc":
+                metrics[f"inference/{short_name}/mean"] = sum(values) / len(values)
+            else:
+                metrics[f"inference/{short_name}/mean"] = sum(values) / len(values)
+                metrics[f"inference/{short_name}/sum"] = sum(values)
+
         return metrics
 
     async def stop(self):
