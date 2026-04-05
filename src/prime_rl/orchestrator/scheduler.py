@@ -196,20 +196,25 @@ class Scheduler:
         if env.requires_group_scoring:
             rollouts_per_example = group.rollouts_to_schedule
             group.rollouts_to_schedule = 0
+            # Convert example dict to vf.RolloutInput, stripping scheduler-internal keys
+            clean_example_dict = {k: v for k, v in group.example.items() if k != "env_name"}
+            rollout_input = vf.RolloutInput(**clean_example_dict)
             task = asyncio.create_task(
                 env.run_group(
                     client=client_config,
-                    example=group.example,
+                    example=rollout_input,
                     model_name=self.model_name,
                     rollouts_per_example=rollouts_per_example,
                 )
             )
         else:
             group.rollouts_to_schedule -= 1
+            clean_example_dict = {k: v for k, v in group.example.items() if k != "env_name"}
+            rollout_input = vf.RolloutInput(**clean_example_dict)
             task = asyncio.create_task(
                 env.run_rollout(
                     client=client_config,
-                    example=group.example,
+                    example=rollout_input,
                     model_name=self.model_name,
                 )
             )
@@ -410,17 +415,23 @@ class Scheduler:
 
                     # Check for empty/errored rollouts and reschedule
                     valid_rollouts = []
+                    had_invalid = False
+                    requires_group_scoring = self.envs.get(env_name).requires_group_scoring
                     for rollout in rollouts:
                         if len(rollout["trajectory"]) == 0:
                             self.empty_rollouts_by_env[env_name] += 1
-                            group.rollouts_to_schedule += 1
+                            had_invalid = True
+                            if not requires_group_scoring:
+                                group.rollouts_to_schedule += 1
                             self.logger.warning(
                                 f"Empty trajectory in group {group_id} ({env_name}), re-scheduling "
                                 f"({len(group.completed_rollouts)}/{self.rollouts_per_example} complete)"
                             )
                         elif rollout["error"] is not None:
                             self.errored_rollouts_by_env[env_name] += 1
-                            group.rollouts_to_schedule += 1
+                            had_invalid = True
+                            if not requires_group_scoring:
+                                group.rollouts_to_schedule += 1
                             self.logger.warning(
                                 f"Rollout error in group {group_id} ({env_name}), re-scheduling "
                                 f"({len(group.completed_rollouts)}/{self.rollouts_per_example} complete): "
@@ -429,6 +440,13 @@ class Scheduler:
                         else:
                             rollout["env_name"] = env_name
                             valid_rollouts.append(rollout)
+
+                    # For group-scoring envs, treat each run_group attempt atomically:
+                    # if any rollout in the group fails, discard the entire attempt and re-run full group.
+                    if requires_group_scoring and had_invalid:
+                        group.completed_rollouts.clear()
+                        group.rollouts_to_schedule = self.rollouts_per_example
+                        continue
 
                     group.completed_rollouts.extend(valid_rollouts)
                     if len(group.completed_rollouts) < self.rollouts_per_example:
