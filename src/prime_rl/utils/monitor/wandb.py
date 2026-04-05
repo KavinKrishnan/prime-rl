@@ -196,7 +196,8 @@ class WandbMonitor(Monitor):
             if isinstance(completion, list):
                 try:
                     completion = self.tokenizer.apply_chat_template(completion, tokenize=False)
-                except Exception:
+                except Exception as e:
+                    self.logger.warning(f"Failed to apply chat template for eval sample completion: {type(e).__name__}: {e}")
                     completion = str(completion)
             sample = {
                 "step": step,
