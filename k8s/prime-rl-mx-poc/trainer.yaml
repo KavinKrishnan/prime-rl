@@ -1,0 +1,65 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: prime-rl-trainer
+  namespace: kavin
+  labels:
+    app: prime-rl-trainer
+spec:
+  replicas: 1
+  serviceName: prime-rl-trainer
+  selector:
+    matchLabels:
+      app: prime-rl-trainer
+  template:
+    metadata:
+      labels:
+        app: prime-rl-trainer
+    spec:
+      containers:
+        - name: trainer
+          image: nvcr.io/nvidian/dynamo-dev/prime-rl-mx:latest
+          command: ["python3", "-m", "prime_rl.trainer.rl.train"]
+          args:
+            - "@"
+            - "/config/train.toml"
+          resources:
+            limits:
+              nvidia.com/gpu: "4"
+            requests:
+              nvidia.com/gpu: "4"
+          env:
+            - name: MODEL_EXPRESS_URL
+              value: "modelexpress-server:8001"
+            - name: UCX_TLS
+              value: "rc_x,rc,dc_x,dc,cuda_copy"
+            - name: NIXL_LOG_LEVEL
+              value: "INFO"
+            - name: HF_HOME
+              value: "/models/hf_home"
+          volumeMounts:
+            - name: shared-model-cache
+              mountPath: /models
+            - name: config
+              mountPath: /config
+            - name: output
+              mountPath: /output
+            - name: dshm
+              mountPath: /dev/shm
+      volumes:
+        - name: shared-model-cache
+          persistentVolumeClaim:
+            claimName: shared-model-cache
+        - name: config
+          configMap:
+            name: prime-rl-mx-config
+        - name: output
+          emptyDir: {}
+        - name: dshm
+          emptyDir:
+            medium: Memory
+            sizeLimit: 64Gi
+      tolerations:
+        - key: "nvidia.com/gpu"
+          operator: "Exists"
+          effect: "NoSchedule"

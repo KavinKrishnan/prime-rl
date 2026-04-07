@@ -1,0 +1,73 @@
+# PRIME-RL + ModelExpress weight broadcast — ARM64 (GB200)
+#
+# Build: docker buildx build --platform linux/arm64 -t prime-rl-mx:latest -f Dockerfile.mx-arm64 .
+# Push:  docker tag prime-rl-mx:latest nvcr.io/nvidian/dynamo-dev/prime-rl-mx:latest && docker push ...
+
+ARG BASE_IMAGE=nvcr.io/nvidia/cuda:12.8.1-devel-ubuntu24.04
+FROM ${BASE_IMAGE} AS builder
+
+ENV DEBIAN_FRONTEND=noninteractive
+ENV PYTHONDONTWRITEBYTECODE=1
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    python3.12 python3.12-dev python3.12-venv python3-pip \
+    git curl wget build-essential ninja-build pkg-config \
+    libibverbs-dev libucx-dev meson \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.12 1 && \
+    python3 -m pip install --break-system-packages uv
+
+# ---------- NIXL from source (ARM64) ----------
+COPY --from=nixl /home/kavink/work/nixl /opt/nixl-src
+WORKDIR /opt/nixl-src
+
+RUN meson setup build \
+    --prefix=/opt/nixl \
+    -Dcuda_path=/usr/local/cuda \
+    -Dbuildtype=release \
+    -Dpython=enabled && \
+    meson compile -C build && \
+    cd build && python3 -m pip wheel . --no-deps -w /opt/wheels/
+
+# If NIXL source is not available in the build context, build from git:
+# RUN git clone --depth 1 https://github.com/ai-dynamo/nixl.git /opt/nixl-src && ...
+
+# ---------- ModelExpress Python client ----------
+RUN python3 -m pip install --break-system-packages \
+    "modelexpress @ git+https://github.com/ai-dynamo/modelexpress.git@kavink/RL#subdirectory=modelexpress_client/python" \
+    --no-deps
+
+# ---------- Runtime image ----------
+FROM ${BASE_IMAGE}
+
+ENV DEBIAN_FRONTEND=noninteractive
+ENV PYTHONDONTWRITEBYTECODE=1
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    python3.12 python3.12-venv python3-pip \
+    libibverbs1 libucx0 \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.12 1 && \
+    python3 -m pip install --break-system-packages uv
+
+# Install NIXL wheel from builder
+COPY --from=builder /opt/wheels/ /opt/wheels/
+RUN python3 -m pip install --break-system-packages --no-deps /opt/wheels/nixl*.whl || true
+
+# Install ModelExpress client from builder
+COPY --from=builder /usr/local/lib/python3.12/dist-packages/modelexpress /usr/local/lib/python3.12/dist-packages/modelexpress
+
+# Install PRIME-RL with MX extras
+WORKDIR /opt/prime-rl
+COPY . .
+RUN python3 -m pip install --break-system-packages -e ".[mx]" || \
+    python3 -m pip install --break-system-packages -e .
+
+# UCX transport defaults for InfiniBand
+ENV UCX_TLS=rc_x,rc,dc_x,dc,cuda_copy
+ENV NIXL_LOG_LEVEL=INFO
+
+ENTRYPOINT ["python3", "-m"]
+CMD ["prime_rl.entrypoints.rl"]

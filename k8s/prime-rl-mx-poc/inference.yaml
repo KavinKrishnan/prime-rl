@@ -1,0 +1,83 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: prime-rl-inference
+  namespace: kavin
+  labels:
+    app: prime-rl-inference
+spec:
+  replicas: 1
+  serviceName: prime-rl-inference
+  selector:
+    matchLabels:
+      app: prime-rl-inference
+  template:
+    metadata:
+      labels:
+        app: prime-rl-inference
+    spec:
+      containers:
+        - name: inference
+          image: nvcr.io/nvidian/dynamo-dev/prime-rl-mx:latest
+          command: ["python3", "-m", "prime_rl.entrypoints.inference"]
+          args:
+            - "@"
+            - "/config/inference.toml"
+          ports:
+            - containerPort: 8000
+              name: vllm
+            - containerPort: 8100
+              name: admin
+          resources:
+            limits:
+              nvidia.com/gpu: "4"
+            requests:
+              nvidia.com/gpu: "4"
+          env:
+            - name: MODEL_EXPRESS_URL
+              value: "modelexpress-server:8001"
+            - name: UCX_TLS
+              value: "rc_x,rc,dc_x,dc,cuda_copy"
+            - name: NIXL_LOG_LEVEL
+              value: "INFO"
+            - name: HF_HOME
+              value: "/models/hf_home"
+          volumeMounts:
+            - name: shared-model-cache
+              mountPath: /models
+            - name: config
+              mountPath: /config
+            - name: dshm
+              mountPath: /dev/shm
+      volumes:
+        - name: shared-model-cache
+          persistentVolumeClaim:
+            claimName: shared-model-cache
+        - name: config
+          configMap:
+            name: prime-rl-mx-config
+        - name: dshm
+          emptyDir:
+            medium: Memory
+            sizeLimit: 64Gi
+      tolerations:
+        - key: "nvidia.com/gpu"
+          operator: "Exists"
+          effect: "NoSchedule"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: prime-rl-inference
+  namespace: kavin
+spec:
+  selector:
+    app: prime-rl-inference
+  ports:
+    - name: vllm
+      port: 8000
+      targetPort: 8000
+    - name: admin
+      port: 8100
+      targetPort: 8100
+  clusterIP: None

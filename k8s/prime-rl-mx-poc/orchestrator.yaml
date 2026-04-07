@@ -1,0 +1,52 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: prime-rl-orchestrator
+  namespace: kavin
+  labels:
+    app: prime-rl-orchestrator
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: prime-rl-orchestrator
+  template:
+    metadata:
+      labels:
+        app: prime-rl-orchestrator
+    spec:
+      containers:
+        - name: orchestrator
+          image: nvcr.io/nvidian/dynamo-dev/prime-rl-mx:latest
+          command: ["python3", "-m", "prime_rl.orchestrator.orchestrator"]
+          args:
+            - "@"
+            - "/config/orchestrator.toml"
+          resources:
+            requests:
+              cpu: "4"
+              memory: "16Gi"
+            limits:
+              cpu: "8"
+              memory: "32Gi"
+          env:
+            - name: MODEL_EXPRESS_URL
+              value: "modelexpress-server:8001"
+            - name: HF_HOME
+              value: "/models/hf_home"
+          volumeMounts:
+            - name: shared-model-cache
+              mountPath: /models
+            - name: config
+              mountPath: /config
+            - name: output
+              mountPath: /output
+      volumes:
+        - name: shared-model-cache
+          persistentVolumeClaim:
+            claimName: shared-model-cache
+        - name: config
+          configMap:
+            name: prime-rl-mx-config
+        - name: output
+          emptyDir: {}
