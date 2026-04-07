@@ -97,9 +97,13 @@ class ModelConfig(BaseModelConfig):
 class WeightBroadcastConfig(BaseConfig):
     """Configures weight broadcast settings."""
 
-    type: Annotated[Literal["nccl", "filesystem"], Field(description="The type of weight broadcast to use.")] = (
-        "filesystem"
-    )
+    type: Annotated[
+        Literal["nccl", "filesystem", "modelexpress"],
+        Field(description="The type of weight broadcast to use."),
+    ] = "filesystem"
+    mx_server_url: Annotated[
+        str, Field(description="ModelExpress server gRPC address (only used when type='modelexpress').")
+    ] = "localhost:8001"
 
 
 # Valid vLLM max_lora_rank values (from vllm/config/lora.py)

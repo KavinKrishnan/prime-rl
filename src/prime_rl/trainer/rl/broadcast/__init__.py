@@ -15,5 +15,8 @@ def setup_weight_broadcast(
         return NCCLWeightBroadcast(output_dir, config, torch.cuda.current_device())
     elif config.type == "filesystem":
         return FileSystemWeightBroadcast(output_dir, config, lora_config)
+    elif config.type == "modelexpress":
+        from prime_rl.trainer.rl.broadcast.modelexpress import ModelExpressWeightBroadcast
+        return ModelExpressWeightBroadcast(output_dir, config, lora_config)
     else:
         raise ValueError(f"Invalid weight broadcast type: {config.type}")

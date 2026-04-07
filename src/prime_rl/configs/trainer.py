@@ -711,8 +711,22 @@ class NCCLWeightBroadcastConfig(BaseWeightBroadcastConfig):
     ] = False
 
 
+class MxWeightBroadcastConfig(BaseWeightBroadcastConfig):
+    """Configures ModelExpress NIXL/RDMA weight broadcast."""
+
+    type: Literal["modelexpress"] = "modelexpress"
+    mx_server_url: Annotated[
+        str, Field(description="ModelExpress server gRPC address (host:port).")
+    ] = "localhost:8001"
+    transport: Annotated[
+        Literal["auto", "rdma", "ipc", "tcp"],
+        Field(description="NIXL transport backend. 'auto' selects the best available."),
+    ] = "auto"
+
+
 WeightBroadcastConfig: TypeAlias = Annotated[
-    FileSystemWeightBroadcastConfig | NCCLWeightBroadcastConfig, Field(discriminator="type")
+    FileSystemWeightBroadcastConfig | NCCLWeightBroadcastConfig | MxWeightBroadcastConfig,
+    Field(discriminator="type"),
 ]
 
 

@@ -59,6 +59,7 @@ from prime_rl.orchestrator.vf_utils import (
     wait_for_env_servers,
 )
 from prime_rl.utils.client import (
+    init_mx_broadcast,
     init_nccl_broadcast,
     setup_inference_pool,
 )
@@ -375,6 +376,12 @@ async def orchestrate(config: OrchestratorConfig):
                 config.weight_broadcast.timeout,
                 inference_world_size=config.weight_broadcast.inference_world_size,
                 quantize_in_weight_transfer=config.weight_broadcast.quantize_in_weight_transfer,
+            )
+        elif config.weight_broadcast.type == "modelexpress":
+            mx_url = getattr(config.weight_broadcast, "mx_server_url", "localhost:8001")
+            await init_mx_broadcast(
+                inference_pool.admin_clients,
+                mx_server_url=mx_url,
             )
     else:
         logger.info("Skipping weight broadcast initialization (SFT distillation mode)")

@@ -172,6 +172,7 @@ def models(request: Request) -> OpenAIServingModels:
 WORKER_EXTENSION_CLS = {
     "nccl": "prime_rl.inference.vllm.worker.nccl.NCCLWeightUpdateWorker",
     "filesystem": "prime_rl.inference.vllm.worker.filesystem.FileSystemWeightUpdateWorker",
+    "modelexpress": "prime_rl.inference.vllm.worker.modelexpress.MxWeightUpdateWorker",
 }
 
 
@@ -228,6 +229,18 @@ async def init_broadcaster(request: Request):
     await engine_client(request).collective_rpc(
         "init_broadcaster",
         args=(host, port, rank_offset, inference_world_size, gpus_per_server, timeout, quantize_in_weight_transfer),
+    )
+    return {"status": "ok"}
+
+
+@router.post("/init_mx_broadcaster")
+async def init_mx_broadcaster(request: Request):
+    data = await request.json()
+    mx_server_url = data.get("mx_server_url", "localhost:8001")
+    await engine_client(request).collective_rpc(
+        "init_broadcaster",
+        args=(),
+        kwargs={"mx_server_url": mx_server_url},
     )
     return {"status": "ok"}
 

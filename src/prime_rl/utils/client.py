@@ -395,3 +395,37 @@ async def init_nccl_broadcast(
             for client_num, admin_client in enumerate(admin_clients)
         ]
     )
+
+
+async def init_mx_broadcast(
+    admin_clients: list[AsyncClient],
+    mx_server_url: str = "localhost:8001",
+) -> None:
+    """Initialize ModelExpress RDMA broadcast on all inference servers.
+
+    Each server initializes an MxRefitReceiver that registers model
+    tensors with NIXL and connects to the MX Server for weight discovery.
+    """
+    logger = get_logger()
+    logger.info(
+        f"Initializing MX broadcast: {len(admin_clients)} servers, "
+        f"mx_server_url={mx_server_url}"
+    )
+
+    async def _init_mx(admin_client: AsyncClient) -> None:
+        try:
+            response = await admin_client.post(
+                "/init_mx_broadcaster",
+                json={"mx_server_url": mx_server_url},
+            )
+            response.raise_for_status()
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 404:
+                logger.warning(
+                    "The route /init_mx_broadcaster does not exist. "
+                    "Skipping MX broadcast initialization."
+                )
+                return
+            raise
+
+    await asyncio.gather(*[_init_mx(client) for client in admin_clients])

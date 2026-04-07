@@ -81,6 +81,11 @@ disagg = [
     "nixl-cu12 ; platform_machine == 'x86_64'",
     "vllm-router ; platform_machine == 'x86_64'",
 ]
+mx = [
+    "modelexpress @ git+https://github.com/ai-dynamo/modelexpress.git@kavink/RL#subdirectory=modelexpress_client/python",
+    "nixl",
+    "grpcio>=1.66.2",
+]
 quack = [
     "quack-kernels>=0.3.3",
 ]
