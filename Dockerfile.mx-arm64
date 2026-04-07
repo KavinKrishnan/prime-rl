@@ -27,15 +27,19 @@ RUN update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.12 1
 # ---- Build NIXL from source (ARM64-compatible) ----
 RUN git clone --depth 1 https://github.com/ai-dynamo/nixl.git /opt/nixl-src
 WORKDIR /opt/nixl-src
+
+# Two-phase build: first configure, then compile with limited parallelism
+# to avoid OOM on pybind11 template-heavy files under QEMU emulation.
 RUN meson setup build \
     --prefix=/opt/nixl-install \
     -Denable_plugins=UCX \
-    -Dbuildtype=release \
-    && meson compile -C build \
-    && meson install -C build
+    -Dbuildtype=release
 
-# Build and install NIXL Python bindings
-RUN cd /opt/nixl-src && python3 -m pip install --break-system-packages . 2>/dev/null || \
+# Compile with -j2 to stay within memory limits under QEMU arm64 emulation
+RUN ninja -C build -j2 && meson install -C build
+
+# Install NIXL Python package
+RUN cd /opt/nixl-src && python3 -m pip install --break-system-packages --no-build-isolation . 2>/dev/null || \
     (cd /opt/nixl-src && pip install --break-system-packages --no-deps -e .) || true
 
 # ---- Install ModelExpress Python client ----
