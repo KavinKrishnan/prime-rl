@@ -1,7 +1,13 @@
 # PRIME-RL + ModelExpress weight broadcast — ARM64 (GB200)
 #
-# Build: docker buildx build --platform linux/arm64 -t prime-rl-mx:latest -f Dockerfile.mx-arm64 .
-# Push:  docker tag prime-rl-mx:latest nvcr.io/nvidian/dynamo-dev/prime-rl-mx:latest && docker push ...
+# Build (cross-compile from x86 host):
+#   docker buildx build --platform linux/arm64 \
+#     -t nvcr.io/nvidian/dynamo-dev/prime-rl-mx:latest \
+#     -f Dockerfile.mx-arm64 --push .
+#
+# Build (native on arm64):
+#   docker build -t nvcr.io/nvidian/dynamo-dev/prime-rl-mx:latest \
+#     -f Dockerfile.mx-arm64 .
 
 ARG BASE_IMAGE=nvcr.io/nvidia/cuda:12.8.1-devel-ubuntu24.04
 FROM ${BASE_IMAGE} AS builder
@@ -11,63 +17,82 @@ ENV PYTHONDONTWRITEBYTECODE=1
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     python3.12 python3.12-dev python3.12-venv python3-pip \
-    git curl wget build-essential ninja-build pkg-config \
-    libibverbs-dev libucx-dev meson \
+    git curl wget build-essential ninja-build pkg-config cmake \
+    libibverbs-dev libucx-dev \
     && rm -rf /var/lib/apt/lists/*
 
-RUN update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.12 1 && \
-    python3 -m pip install --break-system-packages uv
+RUN update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.12 1 \
+    && python3 -m pip install --break-system-packages meson meson-python pybind11 numpy cython
 
-# ---------- NIXL from source (ARM64) ----------
-COPY --from=nixl /home/kavink/work/nixl /opt/nixl-src
+# ---- Build NIXL from source (ARM64-compatible) ----
+RUN git clone --depth 1 https://github.com/ai-dynamo/nixl.git /opt/nixl-src
 WORKDIR /opt/nixl-src
-
 RUN meson setup build \
-    --prefix=/opt/nixl \
+    --prefix=/opt/nixl-install \
     -Dcuda_path=/usr/local/cuda \
     -Dbuildtype=release \
-    -Dpython=enabled && \
-    meson compile -C build && \
-    cd build && python3 -m pip wheel . --no-deps -w /opt/wheels/
+    -Dpython=enabled \
+    && meson compile -C build \
+    && meson install -C build
 
-# If NIXL source is not available in the build context, build from git:
-# RUN git clone --depth 1 https://github.com/ai-dynamo/nixl.git /opt/nixl-src && ...
+# Build NIXL Python wheel
+RUN cd build && python3 -m pip wheel . --no-deps --no-build-isolation -w /opt/wheels/ 2>/dev/null || \
+    python3 -m pip install --break-system-packages --no-deps -e . 2>/dev/null || true
 
-# ---------- ModelExpress Python client ----------
-RUN python3 -m pip install --break-system-packages \
-    "modelexpress @ git+https://github.com/ai-dynamo/modelexpress.git@kavink/RL#subdirectory=modelexpress_client/python" \
-    --no-deps
+# ---- Install ModelExpress Python client ----
+RUN python3 -m pip install --break-system-packages --no-deps \
+    grpcio protobuf pydantic torch numpy huggingface_hub 2>/dev/null || true
 
-# ---------- Runtime image ----------
+RUN python3 -m pip install --break-system-packages --no-deps \
+    "modelexpress @ git+https://github.com/ai-dynamo/modelexpress.git@kavink/RL#subdirectory=modelexpress_client/python"
+
+# ---- Runtime image ----
 FROM ${BASE_IMAGE}
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONDONTWRITEBYTECODE=1
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    python3.12 python3.12-venv python3-pip \
-    libibverbs1 libucx0 \
+    python3.12 python3.12-dev python3.12-venv python3-pip \
+    git libibverbs1 libucx0 curl \
     && rm -rf /var/lib/apt/lists/*
 
-RUN update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.12 1 && \
-    python3 -m pip install --break-system-packages uv
+RUN update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.12 1 \
+    && python3 -m pip install --break-system-packages pip uv
 
-# Install NIXL wheel from builder
+# Copy NIXL install from builder
+COPY --from=builder /opt/nixl-install/ /opt/nixl-install/
 COPY --from=builder /opt/wheels/ /opt/wheels/
-RUN python3 -m pip install --break-system-packages --no-deps /opt/wheels/nixl*.whl || true
+RUN python3 -m pip install --break-system-packages --no-deps /opt/wheels/nixl*.whl 2>/dev/null || \
+    echo "NIXL wheel not found, will use source install"
 
-# Install ModelExpress client from builder
-COPY --from=builder /usr/local/lib/python3.12/dist-packages/modelexpress /usr/local/lib/python3.12/dist-packages/modelexpress
+# Copy NIXL source install (fallback if wheel didn't build)
+COPY --from=builder /opt/nixl-src/build/ /opt/nixl-build/
+ENV LD_LIBRARY_PATH="/opt/nixl-install/lib:${LD_LIBRARY_PATH}"
 
-# Install PRIME-RL with MX extras
+# Copy ModelExpress client from builder
+COPY --from=builder /usr/local/lib/python3.12/dist-packages/modelexpress/ \
+    /usr/local/lib/python3.12/dist-packages/modelexpress/
+
+# ---- Install PRIME-RL ----
 WORKDIR /opt/prime-rl
-COPY . .
-RUN python3 -m pip install --break-system-packages -e ".[mx]" || \
-    python3 -m pip install --break-system-packages -e .
+COPY pyproject.toml uv.lock ./
+COPY src/ src/
 
-# UCX transport defaults for InfiniBand
+# Install core deps first (without optional x86-only extras)
+RUN python3 -m pip install --break-system-packages -e . 2>/dev/null || \
+    python3 -m pip install --break-system-packages --no-deps -e .
+
+# Install vLLM (arm64 wheel available)
+RUN python3 -m pip install --break-system-packages vllm 2>/dev/null || true
+
+# Install grpcio for MX client
+RUN python3 -m pip install --break-system-packages grpcio protobuf pydantic 2>/dev/null || true
+
+# Environment
 ENV UCX_TLS=rc_x,rc,dc_x,dc,cuda_copy
 ENV NIXL_LOG_LEVEL=INFO
+ENV MODEL_EXPRESS_URL=modelexpress-server:8001
 
 ENTRYPOINT ["python3", "-m"]
 CMD ["prime_rl.entrypoints.rl"]
