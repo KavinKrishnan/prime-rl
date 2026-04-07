@@ -29,15 +29,14 @@ RUN git clone --depth 1 https://github.com/ai-dynamo/nixl.git /opt/nixl-src
 WORKDIR /opt/nixl-src
 RUN meson setup build \
     --prefix=/opt/nixl-install \
-    -Dcuda_path=/usr/local/cuda \
+    -Denable_plugins=UCX \
     -Dbuildtype=release \
-    -Dpython=enabled \
     && meson compile -C build \
     && meson install -C build
 
-# Build NIXL Python wheel
-RUN cd build && python3 -m pip wheel . --no-deps --no-build-isolation -w /opt/wheels/ 2>/dev/null || \
-    python3 -m pip install --break-system-packages --no-deps -e . 2>/dev/null || true
+# Build and install NIXL Python bindings
+RUN cd /opt/nixl-src && python3 -m pip install --break-system-packages . 2>/dev/null || \
+    (cd /opt/nixl-src && pip install --break-system-packages --no-deps -e .) || true
 
 # ---- Install ModelExpress Python client ----
 RUN python3 -m pip install --break-system-packages --no-deps \
@@ -60,14 +59,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 RUN update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.12 1 \
     && python3 -m pip install --break-system-packages pip uv
 
-# Copy NIXL install from builder
+# Copy NIXL installed libs and Python packages from builder
 COPY --from=builder /opt/nixl-install/ /opt/nixl-install/
-COPY --from=builder /opt/wheels/ /opt/wheels/
-RUN python3 -m pip install --break-system-packages --no-deps /opt/wheels/nixl*.whl 2>/dev/null || \
-    echo "NIXL wheel not found, will use source install"
-
-# Copy NIXL source install (fallback if wheel didn't build)
-COPY --from=builder /opt/nixl-src/build/ /opt/nixl-build/
+COPY --from=builder /usr/local/lib/python3.12/dist-packages/nixl/ /usr/local/lib/python3.12/dist-packages/nixl/
+COPY --from=builder /usr/local/lib/python3.12/dist-packages/nixl*.dist-info/ /usr/local/lib/python3.12/dist-packages/nixl.dist-info/
 ENV LD_LIBRARY_PATH="/opt/nixl-install/lib:${LD_LIBRARY_PATH}"
 
 # Copy ModelExpress client from builder
