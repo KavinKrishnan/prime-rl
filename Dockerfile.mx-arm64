@@ -103,7 +103,7 @@ ENV PATH="/opt/ucx-install/bin:${PATH}"
 
 # ---- Install PRIME-RL via uv (respects lockfile for correct dep versions) ----
 WORKDIR /opt/prime-rl
-COPY pyproject.toml uv.lock README.md .python-version ./
+COPY pyproject.toml uv.lock README.md ./
 COPY src/ src/
 
 # Use uv to sync deps from the lockfile — handles version pinning correctly
