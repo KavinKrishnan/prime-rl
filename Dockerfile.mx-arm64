@@ -166,10 +166,14 @@ RUN curl -sL -o /tmp/reverse_text-0.1.5-py2.py3-none-any.whl \
 RUN (VIRTUAL_ENV=/opt/prime-rl/.venv uv pip install --no-deps . 2>/dev/null) || \
     python3 -m pip install --break-system-packages --no-deps .
 
-# Copy modelexpress from builder's site-packages into the venv directly
+# Copy modelexpress and nixl from builder's site-packages into the venv
 RUN cp -r /usr/local/lib/python3.12/dist-packages/modelexpress \
     /opt/prime-rl/.venv/lib/python3.12/site-packages/modelexpress && \
-    echo "modelexpress copied into venv"
+    cp -r /usr/local/lib/python3.12/dist-packages/nixl \
+    /opt/prime-rl/.venv/lib/python3.12/site-packages/nixl && \
+    cp /usr/local/lib/python3.12/dist-packages/nixl/*.so \
+    /opt/prime-rl/.venv/lib/python3.12/site-packages/nixl/ 2>/dev/null || true && \
+    echo "modelexpress + nixl copied into venv"
 # Ensure grpcio is in the venv (needed by MxClient)
 RUN VIRTUAL_ENV=/opt/prime-rl/.venv uv pip install grpcio protobuf 2>/dev/null || true
 
