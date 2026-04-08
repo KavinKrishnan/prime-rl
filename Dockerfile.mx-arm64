@@ -96,7 +96,7 @@ COPY --from=builder /opt/nixl-install/ /opt/nixl-install/
 # Copy entire Python site-packages from builder (includes nixl + modelexpress)
 COPY --from=builder /usr/local/lib/python3.12/dist-packages/ /usr/local/lib/python3.12/dist-packages/
 
-ENV LD_LIBRARY_PATH="/opt/ucx-install/lib:/opt/nixl-install/lib:${LD_LIBRARY_PATH}"
+ENV LD_LIBRARY_PATH="/opt/ucx-install/lib:/opt/nixl-install/lib:/opt/nixl-install/lib/aarch64-linux-gnu:${LD_LIBRARY_PATH}"
 ENV PATH="/opt/ucx-install/bin:${PATH}"
 
 # ModelExpress client is included in the site-packages copy above
