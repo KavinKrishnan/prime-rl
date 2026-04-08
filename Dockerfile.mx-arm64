@@ -155,10 +155,10 @@ RUN SITE=/opt/prime-rl/.venv/lib/python3.12/site-packages && \
     echo "flash_attn" > $SITE/flash_attn-2.7.0.dist-info/top_level.txt && \
     echo "flash-attn comprehensive stub installed for arm64"
 
-# Install reverse-text env: download wheel directly, then install with deps (cache-bust: v3)
+# Install reverse-text env via uv (cache-bust: v4)
 RUN curl -sL -o /tmp/reverse_text.whl \
     "https://hub.primeintellect.ai/primeintellect/reverse-text/@e3cd3fe4/reverse_text-0.1.5-py2.py3-none-any.whl" && \
-    /opt/prime-rl/.venv/bin/pip install /tmp/reverse_text.whl && \
+    VIRTUAL_ENV=/opt/prime-rl/.venv uv pip install /tmp/reverse_text.whl && \
     rm /tmp/reverse_text.whl && \
     echo "reverse-text installed" || echo "reverse-text install failed"
 
@@ -171,7 +171,7 @@ RUN cp -r /usr/local/lib/python3.12/dist-packages/modelexpress \
     /opt/prime-rl/.venv/lib/python3.12/site-packages/modelexpress && \
     echo "modelexpress copied into venv"
 # Ensure grpcio is in the venv (needed by MxClient)
-RUN /opt/prime-rl/.venv/bin/pip install grpcio protobuf 2>/dev/null || true
+RUN VIRTUAL_ENV=/opt/prime-rl/.venv uv pip install grpcio protobuf 2>/dev/null || true
 
 # Make venv the default Python
 ENV PATH="/opt/prime-rl/.venv/bin:${PATH}"
