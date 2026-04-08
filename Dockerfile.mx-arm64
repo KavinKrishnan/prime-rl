@@ -155,11 +155,11 @@ RUN SITE=/opt/prime-rl/.venv/lib/python3.12/site-packages && \
     echo "flash_attn" > $SITE/flash_attn-2.7.0.dist-info/top_level.txt && \
     echo "flash-attn comprehensive stub installed for arm64"
 
-# Install reverse-text env via uv (cache-bust: v4)
-RUN curl -sL -o /tmp/reverse_text.whl \
+# Install reverse-text env via uv (cache-bust: v5)
+RUN curl -sL -o /tmp/reverse_text-0.1.5-py2.py3-none-any.whl \
     "https://hub.primeintellect.ai/primeintellect/reverse-text/@e3cd3fe4/reverse_text-0.1.5-py2.py3-none-any.whl" && \
-    VIRTUAL_ENV=/opt/prime-rl/.venv uv pip install /tmp/reverse_text.whl && \
-    rm /tmp/reverse_text.whl && \
+    VIRTUAL_ENV=/opt/prime-rl/.venv uv pip install /tmp/reverse_text-0.1.5-py2.py3-none-any.whl && \
+    rm /tmp/reverse_text-0.1.5-py2.py3-none-any.whl && \
     echo "reverse-text installed" || echo "reverse-text install failed"
 
 # Install PRIME-RL itself into the venv (or system if venv failed)
