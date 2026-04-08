@@ -57,6 +57,9 @@ data:
     max_async_level = 2
     batch_size = 4
 
+    [model]
+    name = "Qwen/Qwen2.5-1.5B"
+
     [client]
     base_url = ["http://prime-rl-inference:8000/v1"]
     admin_base_url = ["http://prime-rl-inference:8000"]

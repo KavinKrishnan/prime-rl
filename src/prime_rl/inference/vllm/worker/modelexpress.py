@@ -63,23 +63,30 @@ class MxWeightUpdateWorker(Worker):
         dp_rank = get_dp_group().rank_in_group
         global_rank = dp_rank * get_tp_group().world_size + tp_rank
 
-        self._mx_receiver = MxRefitReceiver(
-            agent_name=f"inference-rank-{global_rank}",
-            device_id=self.device.index,
-            mx_server_url=mx_server_url,
-        )
+        try:
+            self._mx_receiver = MxRefitReceiver(
+                agent_name=f"inference-rank-{global_rank}",
+                device_id=self.device.index,
+                mx_server_url=mx_server_url,
+            )
 
-        model_tensors = {}
-        for name, param in model.named_parameters():
-            if param.is_contiguous() and param.is_cuda:
-                model_tensors[name] = param.data
+            model_tensors = {}
+            for name, param in model.named_parameters():
+                if param.is_contiguous() and param.is_cuda:
+                    model_tensors[name] = param.data
 
-        self._mx_receiver.initialize(model_tensors=model_tensors)
-        logger.info(
-            f"MxRefitReceiver initialized: rank={global_rank}, "
-            f"registered {len(model_tensors)} tensors, "
-            f"mx_server={mx_server_url}"
-        )
+            self._mx_receiver.initialize(model_tensors=model_tensors)
+            logger.info(
+                f"MxRefitReceiver initialized: rank={global_rank}, "
+                f"registered {len(model_tensors)} tensors, "
+                f"mx_server={mx_server_url}"
+            )
+        except Exception as e:
+            logger.warning(
+                f"MxRefitReceiver init failed ({e}); "
+                "weight updates will fall back to filesystem"
+            )
+            self._mx_receiver = None
 
     def update_weights_from_path(self, weight_dir: str) -> None:
         """Receive updated weights via MX RDMA, falling back to filesystem.
