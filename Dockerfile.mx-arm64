@@ -101,22 +101,35 @@ ENV PATH="/opt/ucx-install/bin:${PATH}"
 
 # ModelExpress client is included in the site-packages copy above
 
-# ---- Install PRIME-RL ----
+# ---- Install PRIME-RL via uv (respects lockfile for correct dep versions) ----
 WORKDIR /opt/prime-rl
-COPY pyproject.toml uv.lock README.md ./
+COPY pyproject.toml uv.lock README.md .python-version ./
 COPY src/ src/
 
-# Install PRIME-RL dependencies
-RUN python3 -m pip install --break-system-packages \
-    vllm torchtitan tomli_w tomli httpx aiolimiter verifiers \
-    ring-flash-attn wandb accelerate triton pydantic-config \
-    pyzmq tenacity hf-transfer 2>/dev/null || true
+# Use uv to sync deps from the lockfile — handles version pinning correctly
+# Skip x86-only extras (flash-attn, disagg) that won't build on arm64
+RUN uv venv /opt/prime-rl/.venv && \
+    VIRTUAL_ENV=/opt/prime-rl/.venv uv sync --frozen --no-install-project 2>/dev/null || \
+    VIRTUAL_ENV=/opt/prime-rl/.venv uv sync --frozen --no-install-project --inexact 2>/dev/null || \
+    (echo "uv sync failed, falling back to pip" && \
+     python3 -m pip install --break-system-packages \
+       vllm "torchtitan @ git+https://github.com/pytorch/torchtitan.git" \
+       tomli_w tomli httpx aiolimiter verifiers ring-flash-attn \
+       wandb accelerate triton pyzmq tenacity hf-transfer \
+       "pydantic-config @ git+https://github.com/PrimeIntellect-ai/pydantic-config.git" \
+       2>/dev/null || true)
 
-# Non-editable install of PRIME-RL itself
-RUN python3 -m pip install --break-system-packages --no-deps .
+# Install PRIME-RL itself into the venv (or system if venv failed)
+RUN (VIRTUAL_ENV=/opt/prime-rl/.venv uv pip install --no-deps . 2>/dev/null) || \
+    python3 -m pip install --break-system-packages --no-deps .
 
-# Ensure grpcio for MX client
-RUN python3 -m pip install --break-system-packages grpcio protobuf pydantic 2>/dev/null || true
+# Ensure MX client deps are available
+RUN (VIRTUAL_ENV=/opt/prime-rl/.venv uv pip install grpcio protobuf pydantic 2>/dev/null) || \
+    python3 -m pip install --break-system-packages grpcio protobuf pydantic 2>/dev/null || true
+
+# Make venv the default Python
+ENV PATH="/opt/prime-rl/.venv/bin:${PATH}"
+ENV VIRTUAL_ENV="/opt/prime-rl/.venv"
 
 # Environment
 ENV UCX_TLS=rc_x,rc,dc_x,dc,cuda_copy
