@@ -5,6 +5,9 @@ metadata:
   namespace: kavin
 data:
   train.toml: |
+    max_steps = 100
+    dist_timeout_seconds = 600
+
     [model]
     name = "Qwen/Qwen2.5-1.5B"
     attn = "sdpa"
@@ -21,19 +24,16 @@ data:
     type = "cosine"
 
     [loss]
-    type = "grpo"
+    type = "default"
 
     [weight_broadcast]
     type = "modelexpress"
     mx_server_url = "modelexpress-server:8001"
 
     [data]
-    # Will be populated by orchestrator transport
 
     [ckpt]
     interval = 50
-
-    max_steps = 100
 
   inference.toml: |
     [model]

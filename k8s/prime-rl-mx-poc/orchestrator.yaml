@@ -24,11 +24,11 @@ spec:
             - "/config/orchestrator.toml"
           resources:
             requests:
-              cpu: "4"
-              memory: "16Gi"
+              cpu: "1"
+              memory: "4Gi"
             limits:
-              cpu: "8"
-              memory: "32Gi"
+              cpu: "2"
+              memory: "8Gi"
           env:
             - name: MODEL_EXPRESS_URL
               value: "modelexpress-server:8001"

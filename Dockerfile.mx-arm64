@@ -148,9 +148,11 @@ RUN SITE=/opt/prime-rl/.venv/lib/python3.12/site-packages && \
 RUN (VIRTUAL_ENV=/opt/prime-rl/.venv uv pip install --no-deps . 2>/dev/null) || \
     python3 -m pip install --break-system-packages --no-deps .
 
-# Ensure MX client deps are available
-RUN (VIRTUAL_ENV=/opt/prime-rl/.venv uv pip install grpcio protobuf pydantic 2>/dev/null) || \
-    python3 -m pip install --break-system-packages grpcio protobuf pydantic 2>/dev/null || true
+# Install MX client + deps into the venv
+RUN /opt/prime-rl/.venv/bin/pip install --no-deps \
+    "modelexpress @ git+https://github.com/ai-dynamo/modelexpress.git@kavink/RL#subdirectory=modelexpress_client/python" \
+    2>/dev/null || true
+RUN /opt/prime-rl/.venv/bin/pip install grpcio protobuf pydantic 2>/dev/null || true
 
 # Make venv the default Python
 ENV PATH="/opt/prime-rl/.venv/bin:${PATH}"
