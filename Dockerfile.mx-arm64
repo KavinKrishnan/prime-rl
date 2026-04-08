@@ -107,17 +107,21 @@ COPY pyproject.toml uv.lock README.md ./
 COPY src/ src/
 
 # Use uv to sync deps from the lockfile — handles version pinning correctly
-# Skip x86-only extras (flash-attn, disagg) that won't build on arm64
+# Skip x86-only extras (disagg) that won't build on arm64
 RUN uv venv /opt/prime-rl/.venv && \
     VIRTUAL_ENV=/opt/prime-rl/.venv uv sync --frozen --no-install-project 2>/dev/null || \
     VIRTUAL_ENV=/opt/prime-rl/.venv uv sync --frozen --no-install-project --inexact 2>/dev/null || \
     (echo "uv sync failed, falling back to pip" && \
-     python3 -m pip install --break-system-packages \
+     /opt/prime-rl/.venv/bin/pip install \
        vllm "torchtitan @ git+https://github.com/pytorch/torchtitan.git" \
        tomli_w tomli httpx aiolimiter verifiers ring-flash-attn \
        wandb accelerate triton pyzmq tenacity hf-transfer \
        "pydantic-config @ git+https://github.com/PrimeIntellect-ai/pydantic-config.git" \
        2>/dev/null || true)
+
+# flash-attn: no arm64 wheel on PyPI — build from source (required by ring_flash_attn)
+RUN MAX_JOBS=2 /opt/prime-rl/.venv/bin/pip install flash-attn --no-build-isolation 2>/dev/null || \
+    echo "flash-attn build failed (non-critical if using sdpa attention)"
 
 # Install PRIME-RL itself into the venv (or system if venv failed)
 RUN (VIRTUAL_ENV=/opt/prime-rl/.venv uv pip install --no-deps . 2>/dev/null) || \

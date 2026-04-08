@@ -7,7 +7,7 @@ data:
   train.toml: |
     [model]
     name = "Qwen/Qwen2.5-1.5B"
-    attn = "flash_attention_2"
+    attn = "sdpa"
 
     [tokenizer]
     name = "Qwen/Qwen2.5-1.5B"
@@ -38,8 +38,11 @@ data:
   inference.toml: |
     [model]
     name = "Qwen/Qwen2.5-1.5B"
-    tensor_parallel_size = 1
     max_model_len = 4096
+    enforce_eager = true
+
+    [parallel]
+    tp = 1
 
     [weight_broadcast]
     type = "modelexpress"
