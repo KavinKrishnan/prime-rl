@@ -166,18 +166,12 @@ RUN curl -sL -o /tmp/reverse_text-0.1.5-py2.py3-none-any.whl \
 RUN (VIRTUAL_ENV=/opt/prime-rl/.venv uv pip install --no-deps . 2>/dev/null) || \
     python3 -m pip install --break-system-packages --no-deps .
 
-# Copy modelexpress and nixl_cu12 into venv, create nixl shim
+# Copy modelexpress and nixl_cu12 into venv, symlink nixl -> nixl_cu12
 RUN VSITE=/opt/prime-rl/.venv/lib/python3.12/site-packages && \
     cp -r /usr/local/lib/python3.12/dist-packages/modelexpress $VSITE/modelexpress && \
     cp -r /opt/nixl-install/lib/python3/dist-packages/nixl_cu12 $VSITE/nixl_cu12 && \
-    mkdir -p $VSITE/nixl && \
-    printf '%s\n' \
-      'from nixl_cu12 import *' \
-      'from nixl_cu12 import _api' \
-      'from nixl_cu12 import _bindings' \
-      > $VSITE/nixl/__init__.py && \
-    cp $VSITE/nixl_cu12/_api.py $VSITE/nixl/_api.py 2>/dev/null || true && \
-    echo "modelexpress + nixl_cu12 + nixl shim copied into venv"
+    ln -sf nixl_cu12 $VSITE/nixl && \
+    echo "modelexpress + nixl_cu12 installed, nixl -> nixl_cu12 symlink"
 # Ensure grpcio is in the venv (needed by MxClient)
 RUN VIRTUAL_ENV=/opt/prime-rl/.venv uv pip install grpcio protobuf 2>/dev/null || true
 
