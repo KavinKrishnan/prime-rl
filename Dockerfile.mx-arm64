@@ -155,10 +155,14 @@ RUN SITE=/opt/prime-rl/.venv/lib/python3.12/site-packages && \
     echo "flash_attn" > $SITE/flash_attn-2.7.0.dist-info/top_level.txt && \
     echo "flash-attn comprehensive stub installed for arm64"
 
-# Install reverse-text environment from PrimeIntellect index
+# Install reverse-text environment from PrimeIntellect index (cache-bust: v2)
 RUN /opt/prime-rl/.venv/bin/pip install reverse-text \
     --extra-index-url https://hub.primeintellect.ai/primeintellect/simple/ \
-    2>/dev/null || echo "reverse-text install failed"
+    && echo "reverse-text installed successfully" \
+    || echo "WARN: reverse-text install failed, trying verifiers entry point" \
+    && /opt/prime-rl/.venv/bin/pip install "verifiers[reverse-text]" \
+       --extra-index-url https://hub.primeintellect.ai/primeintellect/simple/ \
+    || true
 
 # Install PRIME-RL itself into the venv (or system if venv failed)
 RUN (VIRTUAL_ENV=/opt/prime-rl/.venv uv pip install --no-deps . 2>/dev/null) || \
