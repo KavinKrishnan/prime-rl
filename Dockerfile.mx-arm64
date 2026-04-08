@@ -106,14 +106,15 @@ WORKDIR /opt/prime-rl
 COPY pyproject.toml uv.lock README.md ./
 COPY src/ src/
 
-# Non-editable install; first attempt with deps, fallback to --no-deps
-RUN python3 -m pip install --break-system-packages . 2>/dev/null || \
-    python3 -m pip install --break-system-packages --no-deps .
+# Install PRIME-RL dependencies that need to come first
+RUN python3 -m pip install --break-system-packages \
+    vllm torchtitan tomli_w tomli httpx aiolimiter verifiers \
+    ring-flash-attn wandb accelerate 2>/dev/null || true
 
-# Install vLLM (arm64 wheel available)
-RUN python3 -m pip install --break-system-packages vllm 2>/dev/null || true
+# Non-editable install of PRIME-RL itself
+RUN python3 -m pip install --break-system-packages --no-deps .
 
-# Install grpcio for MX client
+# Ensure grpcio for MX client
 RUN python3 -m pip install --break-system-packages grpcio protobuf pydantic 2>/dev/null || true
 
 # Environment

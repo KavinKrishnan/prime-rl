@@ -59,7 +59,24 @@ spec:
           emptyDir:
             medium: Memory
             sizeLimit: 64Gi
+      imagePullSecrets:
+        - name: nvcr-imagepullsecret
       tolerations:
         - key: "nvidia.com/gpu"
           operator: "Exists"
+          effect: "NoSchedule"
+        - key: "dedicated"
+          operator: "Equal"
+          value: "user-workload"
+          effect: "NoSchedule"
+        - key: "dedicated"
+          operator: "Equal"
+          value: "user-workload"
+          effect: "NoExecute"
+        - key: "kubernetes.io/arch"
+          operator: "Exists"
+          effect: "NoSchedule"
+        - key: "kubernetes.io/arch"
+          operator: "Equal"
+          value: "arm64"
           effect: "NoSchedule"
