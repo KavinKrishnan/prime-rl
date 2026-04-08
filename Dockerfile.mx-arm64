@@ -120,14 +120,26 @@ RUN uv venv /opt/prime-rl/.venv && \
        2>/dev/null || true)
 
 # flash-attn: no arm64 wheel on PyPI and CUDA kernels can't compile under QEMU.
-# Create a stub module so ring_flash_attn's import chain doesn't crash at startup.
+# Create a stub module with proper dist-info so transformers' version checks pass.
 # Actual flash attention won't work — use attn="sdpa" in training config.
-RUN mkdir -p /opt/prime-rl/.venv/lib/python3.12/site-packages/flash_attn && \
-    echo 'def flash_attn_varlen_func(*args, **kwargs): raise NotImplementedError("flash_attn stub — use sdpa on arm64")' \
-      > /opt/prime-rl/.venv/lib/python3.12/site-packages/flash_attn/__init__.py && \
-    echo 'from flash_attn import flash_attn_varlen_func' \
-      > /opt/prime-rl/.venv/lib/python3.12/site-packages/flash_attn/flash_attn_interface.py && \
-    echo 'flash-attn stub installed for arm64'
+RUN SITE=/opt/prime-rl/.venv/lib/python3.12/site-packages && \
+    mkdir -p $SITE/flash_attn && \
+    cat > $SITE/flash_attn/__init__.py << 'PYEOF'
+__version__ = "2.7.0"
+def flash_attn_varlen_func(*a, **kw): raise NotImplementedError("flash_attn stub on arm64")
+def flash_attn_func(*a, **kw): raise NotImplementedError("flash_attn stub on arm64")
+def flash_attn_with_kvcache(*a, **kw): raise NotImplementedError("flash_attn stub on arm64")
+def flash_attn_supports_top_left_mask(): return False
+PYEOF
+    cat > $SITE/flash_attn/flash_attn_interface.py << 'PYEOF'
+from flash_attn import flash_attn_varlen_func, flash_attn_func, flash_attn_with_kvcache
+_flash_supports_window_size = False
+PYEOF
+    mkdir -p $SITE/flash_attn-2.7.0.dist-info && \
+    echo -e "Metadata-Version: 2.1\nName: flash-attn\nVersion: 2.7.0" \
+      > $SITE/flash_attn-2.7.0.dist-info/METADATA && \
+    echo "flash_attn" > $SITE/flash_attn-2.7.0.dist-info/top_level.txt && \
+    echo "flash-attn stub with dist-info installed for arm64"
 
 # Install PRIME-RL itself into the venv (or system if venv failed)
 RUN (VIRTUAL_ENV=/opt/prime-rl/.venv uv pip install --no-deps . 2>/dev/null) || \
