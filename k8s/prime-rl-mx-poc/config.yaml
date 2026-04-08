@@ -54,20 +54,20 @@ data:
 
   orchestrator.toml: |
     output_dir = "/output/rl-mx-poc"
+    max_async_level = 2
+    batch_size = 4
+
+    [client]
+    base_url = ["http://prime-rl-inference:8000/v1"]
+    admin_base_url = ["http://prime-rl-inference:8000"]
 
     [weight_broadcast]
     type = "modelexpress"
     mx_server_url = "modelexpress-server:8001"
 
-    max_async_level = 2
-
-    [inference]
-    urls = ["http://prime-rl-inference:8000"]
-    admin_urls = ["http://prime-rl-inference:8100"]
-
     [rollout_transport]
     type = "filesystem"
     path = "/output/rl-mx-poc/batches"
 
-    [env]
-    name = "reverse-text"
+    [[env]]
+    id = "reverse-text"

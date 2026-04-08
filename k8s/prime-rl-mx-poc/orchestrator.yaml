@@ -26,24 +26,27 @@ spec:
             requests:
               cpu: "1"
               memory: "4Gi"
+              nvidia.com/gpu: "0"
             limits:
               cpu: "2"
               memory: "8Gi"
+              nvidia.com/gpu: "0"
           env:
             - name: MODEL_EXPRESS_URL
               value: "modelexpress-server:8001"
-            - name: HF_HOME
-              value: "/models/hf_home"
           volumeMounts:
-            - name: shared-model-cache
-              mountPath: /models
             - name: config
               mountPath: /config
             - name: output
               mountPath: /output
       imagePullSecrets:
         - name: nvcr-imagepullsecret
+      nodeSelector:
+        nvidia.com/gpu.product: NVIDIA-GB200
       tolerations:
+        - key: "nvidia.com/gpu"
+          operator: "Exists"
+          effect: "NoSchedule"
         - key: "dedicated"
           operator: "Equal"
           value: "user-workload"
@@ -60,9 +63,6 @@ spec:
           value: "arm64"
           effect: "NoSchedule"
       volumes:
-        - name: shared-model-cache
-          persistentVolumeClaim:
-            claimName: shared-model-cache
         - name: config
           configMap:
             name: prime-rl-mx-config

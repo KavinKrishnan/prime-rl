@@ -701,8 +701,16 @@ class NCCLWeightBroadcastConfig(BaseModel):
     ] = 1
 
 
+class MxWeightBroadcastConfig(BaseModel):
+    """Configures the ModelExpress NIXL/RDMA weight broadcast."""
+
+    type: Literal["modelexpress"] = "modelexpress"
+    mx_server_url: Annotated[str, Field(description="ModelExpress server gRPC address.")] = "localhost:8001"
+
+
 WeightBroadcastConfig: TypeAlias = Annotated[
-    FileSystemWeightBroadcastConfig | NCCLWeightBroadcastConfig, Field(discriminator="type")
+    FileSystemWeightBroadcastConfig | NCCLWeightBroadcastConfig | MxWeightBroadcastConfig,
+    Field(discriminator="type"),
 ]
 
 
