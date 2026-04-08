@@ -164,11 +164,12 @@ RUN /opt/prime-rl/.venv/bin/pip install reverse-text \
 RUN (VIRTUAL_ENV=/opt/prime-rl/.venv uv pip install --no-deps . 2>/dev/null) || \
     python3 -m pip install --break-system-packages --no-deps .
 
-# Install MX client + deps into the venv
-RUN /opt/prime-rl/.venv/bin/pip install --no-deps \
-    "modelexpress @ git+https://github.com/ai-dynamo/modelexpress.git@kavink/RL#subdirectory=modelexpress_client/python" \
-    2>/dev/null || true
-RUN /opt/prime-rl/.venv/bin/pip install grpcio protobuf pydantic 2>/dev/null || true
+# Copy modelexpress from builder's site-packages into the venv directly
+RUN cp -r /usr/local/lib/python3.12/dist-packages/modelexpress \
+    /opt/prime-rl/.venv/lib/python3.12/site-packages/modelexpress && \
+    echo "modelexpress copied into venv"
+# Ensure grpcio is in the venv (needed by MxClient)
+RUN /opt/prime-rl/.venv/bin/pip install grpcio protobuf 2>/dev/null || true
 
 # Make venv the default Python
 ENV PATH="/opt/prime-rl/.venv/bin:${PATH}"
