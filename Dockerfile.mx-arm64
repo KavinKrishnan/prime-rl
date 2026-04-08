@@ -106,10 +106,11 @@ WORKDIR /opt/prime-rl
 COPY pyproject.toml uv.lock README.md ./
 COPY src/ src/
 
-# Install PRIME-RL dependencies that need to come first
+# Install PRIME-RL dependencies
 RUN python3 -m pip install --break-system-packages \
     vllm torchtitan tomli_w tomli httpx aiolimiter verifiers \
-    ring-flash-attn wandb accelerate 2>/dev/null || true
+    ring-flash-attn wandb accelerate triton pydantic-config \
+    pyzmq tenacity hf-transfer 2>/dev/null || true
 
 # Non-editable install of PRIME-RL itself
 RUN python3 -m pip install --break-system-packages --no-deps .
