@@ -119,9 +119,15 @@ RUN uv venv /opt/prime-rl/.venv && \
        "pydantic-config @ git+https://github.com/PrimeIntellect-ai/pydantic-config.git" \
        2>/dev/null || true)
 
-# flash-attn: no arm64 wheel on PyPI — build from source (required by ring_flash_attn)
-RUN MAX_JOBS=2 /opt/prime-rl/.venv/bin/pip install flash-attn --no-build-isolation 2>/dev/null || \
-    echo "flash-attn build failed (non-critical if using sdpa attention)"
+# flash-attn: no arm64 wheel on PyPI and CUDA kernels can't compile under QEMU.
+# Create a stub module so ring_flash_attn's import chain doesn't crash at startup.
+# Actual flash attention won't work — use attn="sdpa" in training config.
+RUN mkdir -p /opt/prime-rl/.venv/lib/python3.12/site-packages/flash_attn && \
+    echo 'def flash_attn_varlen_func(*args, **kwargs): raise NotImplementedError("flash_attn stub — use sdpa on arm64")' \
+      > /opt/prime-rl/.venv/lib/python3.12/site-packages/flash_attn/__init__.py && \
+    echo 'from flash_attn import flash_attn_varlen_func' \
+      > /opt/prime-rl/.venv/lib/python3.12/site-packages/flash_attn/flash_attn_interface.py && \
+    echo 'flash-attn stub installed for arm64'
 
 # Install PRIME-RL itself into the venv (or system if venv failed)
 RUN (VIRTUAL_ENV=/opt/prime-rl/.venv uv pip install --no-deps . 2>/dev/null) || \
