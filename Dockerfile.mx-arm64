@@ -119,19 +119,25 @@ RUN uv venv /opt/prime-rl/.venv && \
        "pydantic-config @ git+https://github.com/PrimeIntellect-ai/pydantic-config.git" \
        2>/dev/null || true)
 
-# flash-attn: no arm64 wheel — create stub with dist-info so transformers passes.
+# flash-attn: no arm64 wheel — create stub with all symbols ring_flash_attn needs.
 RUN SITE=/opt/prime-rl/.venv/lib/python3.12/site-packages && \
     mkdir -p $SITE/flash_attn $SITE/flash_attn-2.7.0.dist-info && \
     printf '%s\n' \
       '__version__ = "2.7.0"' \
-      'def flash_attn_varlen_func(*a, **kw): raise NotImplementedError("stub")' \
-      'def flash_attn_func(*a, **kw): raise NotImplementedError("stub")' \
-      'def flash_attn_with_kvcache(*a, **kw): raise NotImplementedError("stub")' \
+      '_stub_msg = "flash_attn stub on arm64 — use attn=sdpa"' \
+      'def flash_attn_varlen_func(*a, **kw): raise NotImplementedError(_stub_msg)' \
+      'def flash_attn_func(*a, **kw): raise NotImplementedError(_stub_msg)' \
+      'def flash_attn_with_kvcache(*a, **kw): raise NotImplementedError(_stub_msg)' \
       'def flash_attn_supports_top_left_mask(): return False' \
       > $SITE/flash_attn/__init__.py && \
     printf '%s\n' \
       'from flash_attn import flash_attn_varlen_func, flash_attn_func, flash_attn_with_kvcache' \
       '_flash_supports_window_size = False' \
+      '_stub_msg = "flash_attn stub on arm64 — use attn=sdpa"' \
+      'def _flash_attn_varlen_forward(*a, **kw): raise NotImplementedError(_stub_msg)' \
+      'def _flash_attn_varlen_backward(*a, **kw): raise NotImplementedError(_stub_msg)' \
+      'def _flash_attn_forward(*a, **kw): raise NotImplementedError(_stub_msg)' \
+      'def _flash_attn_backward(*a, **kw): raise NotImplementedError(_stub_msg)' \
       > $SITE/flash_attn/flash_attn_interface.py && \
     printf 'Metadata-Version: 2.1\nName: flash-attn\nVersion: 2.7.0\n' \
       > $SITE/flash_attn-2.7.0.dist-info/METADATA && \
