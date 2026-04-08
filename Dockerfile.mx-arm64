@@ -103,12 +103,12 @@ ENV PATH="/opt/ucx-install/bin:${PATH}"
 
 # ---- Install PRIME-RL ----
 WORKDIR /opt/prime-rl
-COPY pyproject.toml uv.lock ./
+COPY pyproject.toml uv.lock README.md ./
 COPY src/ src/
 
-# Install core deps first (without optional x86-only extras)
-RUN python3 -m pip install --break-system-packages -e . 2>/dev/null || \
-    python3 -m pip install --break-system-packages --no-deps -e .
+# Non-editable install; first attempt with deps, fallback to --no-deps
+RUN python3 -m pip install --break-system-packages . 2>/dev/null || \
+    python3 -m pip install --break-system-packages --no-deps .
 
 # Install vLLM (arm64 wheel available)
 RUN python3 -m pip install --break-system-packages vllm 2>/dev/null || true
