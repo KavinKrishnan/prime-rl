@@ -119,30 +119,44 @@ RUN uv venv /opt/prime-rl/.venv && \
        "pydantic-config @ git+https://github.com/PrimeIntellect-ai/pydantic-config.git" \
        2>/dev/null || true)
 
-# flash-attn: no arm64 wheel — create stub with all symbols ring_flash_attn needs.
+# flash-attn: comprehensive stub for arm64 (ring_flash_attn + vLLM rotary needs)
 RUN SITE=/opt/prime-rl/.venv/lib/python3.12/site-packages && \
-    mkdir -p $SITE/flash_attn $SITE/flash_attn-2.7.0.dist-info && \
+    mkdir -p $SITE/flash_attn/ops/triton $SITE/flash_attn-2.7.0.dist-info && \
     printf '%s\n' \
       '__version__ = "2.7.0"' \
-      '_stub_msg = "flash_attn stub on arm64 — use attn=sdpa"' \
-      'def flash_attn_varlen_func(*a, **kw): raise NotImplementedError(_stub_msg)' \
-      'def flash_attn_func(*a, **kw): raise NotImplementedError(_stub_msg)' \
-      'def flash_attn_with_kvcache(*a, **kw): raise NotImplementedError(_stub_msg)' \
+      '_stub = "flash_attn stub on arm64"' \
+      'def flash_attn_varlen_func(*a, **kw): raise NotImplementedError(_stub)' \
+      'def flash_attn_func(*a, **kw): raise NotImplementedError(_stub)' \
+      'def flash_attn_with_kvcache(*a, **kw): raise NotImplementedError(_stub)' \
       'def flash_attn_supports_top_left_mask(): return False' \
       > $SITE/flash_attn/__init__.py && \
     printf '%s\n' \
       'from flash_attn import flash_attn_varlen_func, flash_attn_func, flash_attn_with_kvcache' \
       '_flash_supports_window_size = False' \
-      '_stub_msg = "flash_attn stub on arm64 — use attn=sdpa"' \
-      'def _flash_attn_varlen_forward(*a, **kw): raise NotImplementedError(_stub_msg)' \
-      'def _flash_attn_varlen_backward(*a, **kw): raise NotImplementedError(_stub_msg)' \
-      'def _flash_attn_forward(*a, **kw): raise NotImplementedError(_stub_msg)' \
-      'def _flash_attn_backward(*a, **kw): raise NotImplementedError(_stub_msg)' \
+      '_s = "flash_attn stub on arm64"' \
+      'def _flash_attn_varlen_forward(*a, **kw): raise NotImplementedError(_s)' \
+      'def _flash_attn_varlen_backward(*a, **kw): raise NotImplementedError(_s)' \
+      'def _flash_attn_forward(*a, **kw): raise NotImplementedError(_s)' \
+      'def _flash_attn_backward(*a, **kw): raise NotImplementedError(_s)' \
       > $SITE/flash_attn/flash_attn_interface.py && \
+    touch $SITE/flash_attn/ops/__init__.py && \
+    touch $SITE/flash_attn/ops/triton/__init__.py && \
+    printf '%s\n' \
+      'import torch' \
+      'def apply_rotary(x, cos, sin, interleaved=False, conjugate=False):' \
+      '    cos = cos[:x.shape[1]].unsqueeze(0).unsqueeze(2)' \
+      '    sin = sin[:x.shape[1]].unsqueeze(0).unsqueeze(2)' \
+      '    half = x.shape[-1] // 2' \
+      '    x1, x2 = x[..., :half], x[..., half:]' \
+      '    return torch.cat([x1 * cos - x2 * sin, x2 * cos + x1 * sin], dim=-1)' \
+      > $SITE/flash_attn/ops/triton/rotary.py && \
     printf 'Metadata-Version: 2.1\nName: flash-attn\nVersion: 2.7.0\n' \
       > $SITE/flash_attn-2.7.0.dist-info/METADATA && \
     echo "flash_attn" > $SITE/flash_attn-2.7.0.dist-info/top_level.txt && \
-    echo "flash-attn stub installed for arm64"
+    echo "flash-attn comprehensive stub installed for arm64"
+
+# Install reverse-text environment for orchestrator
+RUN /opt/prime-rl/.venv/bin/pip install reverse-text 2>/dev/null || true
 
 # Install PRIME-RL itself into the venv (or system if venv failed)
 RUN (VIRTUAL_ENV=/opt/prime-rl/.venv uv pip install --no-deps . 2>/dev/null) || \
