@@ -35,9 +35,9 @@ RUN git clone --depth 1 -b v1.18.0 https://github.com/openucx/ucx.git /opt/ucx-s
 
 ENV PATH="/opt/ucx-install/bin:${PATH}"
 ENV LD_LIBRARY_PATH="/opt/ucx-install/lib:${LD_LIBRARY_PATH}"
-ENV PKG_CONFIG_PATH="/opt/ucx-install/lib/pkgconfig:${PKG_CONFIG_PATH}"
-ENV C_INCLUDE_PATH="/opt/ucx-install/include:${C_INCLUDE_PATH}"
-ENV CPLUS_INCLUDE_PATH="/opt/ucx-install/include:${CPLUS_INCLUDE_PATH}"
+ENV PKG_CONFIG_PATH="/opt/ucx-install/lib/pkgconfig"
+ENV C_INCLUDE_PATH="/opt/ucx-install/include"
+ENV CPLUS_INCLUDE_PATH="/opt/ucx-install/include"
 
 # ---- Build NIXL from source (ARM64-compatible) ----
 RUN git clone --depth 1 https://github.com/ai-dynamo/nixl.git /opt/nixl-src
@@ -54,9 +54,17 @@ RUN meson setup build \
 # Compile with -j2 to stay within memory limits under QEMU arm64 emulation
 RUN ninja -C build -j2 && meson install -C build
 
-# Install NIXL Python package
-RUN cd /opt/nixl-src && python3 -m pip install --break-system-packages --no-build-isolation . 2>/dev/null || \
-    (cd /opt/nixl-src && pip install --break-system-packages --no-deps -e .) || true
+# Install NIXL Python package — meson already built it, just install the binding into site-packages
+RUN cd /opt/nixl-src && \
+    python3 -m pip install --break-system-packages --no-build-isolation . || \
+    (echo "pip install failed, copying binding manually" && \
+     mkdir -p /usr/local/lib/python3.12/dist-packages/nixl && \
+     cp -r build/src/bindings/python/* /usr/local/lib/python3.12/dist-packages/nixl/ 2>/dev/null; \
+     cp build/src/bindings/python/*.so /usr/local/lib/python3.12/dist-packages/nixl/ 2>/dev/null; \
+     true)
+
+# Debug: show where nixl ended up
+RUN find /usr/local/lib/python3.12/dist-packages /opt/nixl-install -name "nixl*" -o -name "_bindings*" 2>/dev/null | head -20 || true
 
 # ---- Install ModelExpress Python client ----
 RUN python3 -m pip install --break-system-packages --no-deps \
@@ -82,16 +90,16 @@ RUN update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.12 1
 # Copy UCX install from builder
 COPY --from=builder /opt/ucx-install/ /opt/ucx-install/
 
-# Copy NIXL installed libs and Python packages from builder
+# Copy NIXL installed libs from builder
 COPY --from=builder /opt/nixl-install/ /opt/nixl-install/
-COPY --from=builder /usr/local/lib/python3.12/dist-packages/nixl/ /usr/local/lib/python3.12/dist-packages/nixl/
-COPY --from=builder /usr/local/lib/python3.12/dist-packages/nixl*.dist-info/ /usr/local/lib/python3.12/dist-packages/nixl.dist-info/
+
+# Copy entire Python site-packages from builder (includes nixl + modelexpress)
+COPY --from=builder /usr/local/lib/python3.12/dist-packages/ /usr/local/lib/python3.12/dist-packages/
+
 ENV LD_LIBRARY_PATH="/opt/ucx-install/lib:/opt/nixl-install/lib:${LD_LIBRARY_PATH}"
 ENV PATH="/opt/ucx-install/bin:${PATH}"
 
-# Copy ModelExpress client from builder
-COPY --from=builder /usr/local/lib/python3.12/dist-packages/modelexpress/ \
-    /usr/local/lib/python3.12/dist-packages/modelexpress/
+# ModelExpress client is included in the site-packages copy above
 
 # ---- Install PRIME-RL ----
 WORKDIR /opt/prime-rl
