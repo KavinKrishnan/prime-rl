@@ -75,17 +75,24 @@ class MxWeightUpdateWorker(Worker):
                 if param.is_contiguous() and param.is_cuda:
                     model_tensors[name] = param.data
 
+            import sys
+            print(
+                f"[MX-DEBUG] init_broadcaster: found {len(model_tensors)} CUDA tensors "
+                f"(total params: {sum(1 for _ in model.named_parameters())})",
+                file=sys.stderr, flush=True,
+            )
+
             self._mx_receiver.initialize(model_tensors=model_tensors)
-            logger.info(
-                f"MxRefitReceiver initialized: rank={global_rank}, "
+            print(
+                f"[MX-DEBUG] MxRefitReceiver initialized: rank={global_rank}, "
                 f"registered {len(model_tensors)} tensors, "
-                f"mx_server={mx_server_url}"
+                f"mx_server={mx_server_url}",
+                file=sys.stderr, flush=True,
             )
         except Exception as e:
-            logger.warning(
-                f"MxRefitReceiver init failed ({e}); "
-                "weight updates will fall back to filesystem"
-            )
+            import sys, traceback
+            print(f"[MX-DEBUG] init_broadcaster FAILED: {e}", file=sys.stderr, flush=True)
+            traceback.print_exc(file=sys.stderr)
             self._mx_receiver = None
 
     def update_weights_from_path(self, weight_dir: str) -> None:
