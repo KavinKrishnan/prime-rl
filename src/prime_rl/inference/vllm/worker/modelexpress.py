@@ -32,16 +32,15 @@ except ImportError:
 class MxWeightUpdateWorker(Worker):
     """vLLM worker extension for receiving weights via ModelExpress NIXL/RDMA.
 
-    When the orchestrator triggers a weight update, this worker queries the
-    MX Server for the latest training-published weights, pulls them via
-    RDMA into locally registered GPU buffers, and applies them to the model.
-
-    Falls back to filesystem-based loading if MX is unavailable or no
-    RDMA source is found.
+    Uses a scratch-buffer approach: RDMA-receives HF-format weights into
+    temporary GPU tensors, then feeds them through model.load_weights()
+    which handles name mapping and tensor fusion (e.g. q/k/v -> qkv_proj).
     """
 
     def init_broadcaster(self, mx_server_url: str = "localhost:8001", **kwargs) -> None:
-        """Initialize the MxRefitReceiver for this vLLM worker."""
+        """Initialize the MxRefitReceiver NIXL agent (no tensor registration)."""
+        import sys
+
         if not MX_AVAILABLE:
             logger.warning(
                 "modelexpress package not installed; MX weight updates will "
@@ -49,13 +48,6 @@ class MxWeightUpdateWorker(Worker):
             )
             self._mx_receiver = None
             return
-
-        model_runner = self.model_runner
-        if hasattr(model_runner.model, "runnable"):
-            model = model_runner.model.runnable
-        else:
-            model = model_runner.model
-        assert isinstance(model, Module)
 
         from vllm.distributed.parallel_state import get_tp_group, get_dp_group
 
@@ -69,39 +61,21 @@ class MxWeightUpdateWorker(Worker):
                 device_id=self.device.index,
                 mx_server_url=mx_server_url,
             )
-
-            model_tensors = {}
-            for name, param in model.named_parameters():
-                if param.is_contiguous() and param.is_cuda:
-                    model_tensors[name] = param.data
-
-            import sys
+            self._mx_receiver.initialize(model_tensors=None)
             print(
-                f"[MX-DEBUG] init_broadcaster: found {len(model_tensors)} CUDA tensors "
-                f"(total params: {sum(1 for _ in model.named_parameters())})",
-                file=sys.stderr, flush=True,
-            )
-
-            self._mx_receiver.initialize(model_tensors=model_tensors)
-            print(
-                f"[MX-DEBUG] MxRefitReceiver initialized: rank={global_rank}, "
-                f"registered {len(model_tensors)} tensors, "
-                f"mx_server={mx_server_url}",
+                f"[MX] MxRefitReceiver initialized: rank={global_rank}, "
+                f"device={self.device.index}, mx_server={mx_server_url} "
+                f"(scratch-buffer mode, tensors registered on-demand)",
                 file=sys.stderr, flush=True,
             )
         except Exception as e:
-            import sys, traceback
-            print(f"[MX-DEBUG] init_broadcaster FAILED: {e}", file=sys.stderr, flush=True)
+            import traceback
+            print(f"[MX] init_broadcaster FAILED: {e}", file=sys.stderr, flush=True)
             traceback.print_exc(file=sys.stderr)
             self._mx_receiver = None
 
     def update_weights_from_path(self, weight_dir: str) -> None:
-        """Receive updated weights via MX RDMA, falling back to filesystem.
-
-        The ``weight_dir`` is passed by the orchestrator but may not contain
-        actual weight files when using MX (the data comes via RDMA). It is
-        still used for coordination (STABLE/NCCL_READY markers).
-        """
+        """Receive updated weights via MX RDMA, falling back to filesystem."""
         model_runner = self.model_runner
         if hasattr(model_runner.model, "runnable"):
             model = model_runner.model.runnable
@@ -116,7 +90,9 @@ class MxWeightUpdateWorker(Worker):
         self._filesystem_fallback(model, weight_dir)
 
     def _try_mx_update(self, model: Module) -> bool:
-        """Attempt to receive weights from MX. Returns True on success."""
+        """Attempt to receive weights from MX via scratch buffers."""
+        import sys
+
         if not hasattr(self, "_mx_receiver") or self._mx_receiver is None:
             return False
 
@@ -137,27 +113,32 @@ class MxWeightUpdateWorker(Worker):
             logger.info("No MX source found for weight update")
             return False
 
-        logger.info(
-            f"MX source found: step={source.training_step}, "
-            f"id={source.mx_source_id}"
+        print(
+            f"[MX] Source found: step={source.training_step}, "
+            f"id={source.mx_source_id}",
+            file=sys.stderr, flush=True,
         )
 
         try:
-            weights_iter = self._mx_receiver.receive_weights(source)
-            load_weights_checkpoint(model, weights_iter)
-            postprocess_weights_checkpoint(
+            weights_iter = self._mx_receiver.receive_weights_scratch(source)
+            model.load_weights(weights_iter)
+            process_weights_after_loading(
                 model, self.model_runner.model_config, self.device
             )
-            logger.info(
-                f"MX weight update complete (step={source.training_step})"
+            print(
+                f"[MX] Weight update complete via RDMA "
+                f"(step={source.training_step})",
+                file=sys.stderr, flush=True,
             )
             return True
         except Exception as e:
-            logger.error(f"MX weight transfer failed: {e}")
+            import traceback
+            print(f"[MX] Weight transfer failed: {e}", file=sys.stderr, flush=True)
+            traceback.print_exc(file=sys.stderr)
             return False
 
     def _filesystem_fallback(self, model: Module, weight_dir: str) -> None:
-        """Load weights from shared filesystem (same as FileSystemWeightUpdateWorker)."""
+        """Load weights from shared filesystem."""
         from vllm.model_executor.model_loader import DefaultModelLoader, get_model_loader
 
         model_loader = get_model_loader(self.load_config)
