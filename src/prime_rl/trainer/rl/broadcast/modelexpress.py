@@ -15,7 +15,7 @@ from prime_rl.trainer.rl.broadcast.nccl import (
     preprocess_layer_checkpoint,
 )
 from prime_rl.trainer.runs import get_multi_run_manager
-from prime_rl.trainer.weights import gather_weights_on_master, get_max_layer_num
+from prime_rl.trainer.weights import gather_weights_on_master, get_max_layer_num, save_state_dict
 from prime_rl.trainer.world import get_world
 from prime_rl.utils.utils import get_broadcast_dir, get_step_path
 from prime_rl.utils.vlm import get_layer_prefix
@@ -137,6 +137,10 @@ class ModelExpressWeightBroadcast(WeightBroadcast):
                     self.multi_run_manager.progress[idx].step,
                 )
                 save_dir.mkdir(parents=True, exist_ok=True)
+
+                save_state_dict(state_dict, save_dir, "safetensors", save_sharded=True)
+                self.logger.info(f"Saved HF checkpoint to {save_dir} (filesystem fallback)")
+
                 self._notify_orchestrator(save_dir)
             except FileNotFoundError:
                 self.logger.warning(f"Run {idx} deleted, skipping notification")

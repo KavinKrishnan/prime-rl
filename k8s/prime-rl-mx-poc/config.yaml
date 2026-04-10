@@ -5,6 +5,7 @@ metadata:
   namespace: kavin
 data:
   train.toml: |
+    output_dir = "/models/rl-mx-poc"
     max_steps = 100
     dist_timeout_seconds = 600
 
@@ -28,7 +29,10 @@ data:
 
     [weight_broadcast]
     type = "modelexpress"
-    mx_server_url = "modelexpress-server:8001"
+    mx_server_url = "modelexpress-server.kavin.svc.cluster.local:8001"
+
+    [rollout_transport]
+    type = "filesystem"
 
     [data]
 
@@ -46,31 +50,32 @@ data:
 
     [weight_broadcast]
     type = "modelexpress"
-    mx_server_url = "modelexpress-server:8001"
+    mx_server_url = "modelexpress-server.kavin.svc.cluster.local:8001"
 
     [server]
     host = "0.0.0.0"
     port = 8000
 
   orchestrator.toml: |
-    output_dir = "/output/rl-mx-poc"
+    output_dir = "/models/rl-mx-poc/run_0"
     max_async_level = 2
     batch_size = 4
+
+    filters = []
 
     [model]
     name = "Qwen/Qwen2.5-1.5B"
 
     [client]
-    base_url = ["http://prime-rl-inference:8000/v1"]
-    admin_base_url = ["http://prime-rl-inference:8000"]
+    base_url = ["http://prime-rl-inference.kavin.svc.cluster.local:8000/v1"]
+    admin_base_url = ["http://prime-rl-inference.kavin.svc.cluster.local:8000"]
 
     [weight_broadcast]
     type = "modelexpress"
-    mx_server_url = "modelexpress-server:8001"
+    mx_server_url = "modelexpress-server.kavin.svc.cluster.local:8001"
 
     [rollout_transport]
     type = "filesystem"
-    path = "/output/rl-mx-poc/batches"
 
     [[env]]
     id = "reverse-text"

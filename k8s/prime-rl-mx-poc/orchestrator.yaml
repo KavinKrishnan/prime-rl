@@ -39,6 +39,8 @@ spec:
               mountPath: /config
             - name: output
               mountPath: /output
+            - name: shared-model-cache
+              mountPath: /models
       imagePullSecrets:
         - name: nvcr-imagepullsecret
       nodeSelector:
@@ -68,3 +70,6 @@ spec:
             name: prime-rl-mx-config
         - name: output
           emptyDir: {}
+        - name: shared-model-cache
+          persistentVolumeClaim:
+            claimName: shared-model-cache

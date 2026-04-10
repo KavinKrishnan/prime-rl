@@ -16,6 +16,8 @@ spec:
       labels:
         app: prime-rl-trainer
     spec:
+      hostNetwork: true
+      dnsPolicy: ClusterFirstWithHostNet
       containers:
         - name: trainer
           image: nvcr.io/nvidian/dynamo-dev/prime-rl-mx:latest
@@ -23,6 +25,8 @@ spec:
           args:
             - "@"
             - "/config/train.toml"
+          securityContext:
+            privileged: true
           resources:
             limits:
               nvidia.com/gpu: "4"
@@ -30,11 +34,15 @@ spec:
               nvidia.com/gpu: "4"
           env:
             - name: MODEL_EXPRESS_URL
-              value: "modelexpress-server:8001"
+              value: "modelexpress-server.kavin.svc.cluster.local:8001"
             - name: UCX_TLS
-              value: "rc_x,rc,dc_x,dc,cuda_copy"
+              value: "self,sm,rc,cuda_copy,gdr_copy,tcp"
+            - name: UCX_IB_GID_INDEX
+              value: "3"
             - name: NIXL_LOG_LEVEL
               value: "INFO"
+            - name: NVIDIA_GDRCOPY
+              value: "1"
             - name: HF_HOME
               value: "/models/hf_home"
           volumeMounts:
@@ -46,6 +54,8 @@ spec:
               mountPath: /output
             - name: dshm
               mountPath: /dev/shm
+            - name: infiniband
+              mountPath: /dev/infiniband
       volumes:
         - name: shared-model-cache
           persistentVolumeClaim:
@@ -59,8 +69,14 @@ spec:
           emptyDir:
             medium: Memory
             sizeLimit: 64Gi
+        - name: infiniband
+          hostPath:
+            path: /dev/infiniband
+            type: Directory
       imagePullSecrets:
         - name: nvcr-imagepullsecret
+      nodeSelector:
+        kubernetes.io/arch: arm64
       tolerations:
         - key: "nvidia.com/gpu"
           operator: "Exists"
@@ -75,8 +91,4 @@ spec:
           effect: "NoExecute"
         - key: "kubernetes.io/arch"
           operator: "Exists"
-          effect: "NoSchedule"
-        - key: "kubernetes.io/arch"
-          operator: "Equal"
-          value: "arm64"
           effect: "NoSchedule"
