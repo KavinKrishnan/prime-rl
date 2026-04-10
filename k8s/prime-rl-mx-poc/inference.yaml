@@ -89,6 +89,26 @@ spec:
       nodeSelector:
         kubernetes.io/arch: arm64
         nvidia.com/gpu.product: NVIDIA-GB200
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: cloud.google.com/gke-nodepool
+                    operator: In
+                    values:
+                      - customer-gpu-w0e
+        podAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchExpressions:
+                    - key: app
+                      operator: In
+                      values:
+                        - prime-rl-trainer
+                topologyKey: nvidia.com/gpu.clique
       tolerations:
         - key: "nvidia.com/gpu"
           operator: "Exists"

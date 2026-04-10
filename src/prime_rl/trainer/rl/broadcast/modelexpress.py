@@ -74,6 +74,7 @@ class ModelExpressWeightBroadcast(WeightBroadcast):
             agent_name=f"trainer-rank-{self.world.rank}",
             device_id=self.world.local_rank,
             mx_server_url=self._mx_server_url,
+            listen_port=15555,
         )
         self._publisher.initialize(model_name=model_name)
         self.logger.info(
@@ -105,28 +106,26 @@ class ModelExpressWeightBroadcast(WeightBroadcast):
         num_layers = get_max_layer_num(state_dict, layer_prefix)
 
         if mx_ok:
+            all_gpu_tensors = {}
             for layer_id, layer_state_dict in filter_state_dict_by_layers(
                 state_dict, num_layers, layer_prefix
             ):
                 layer_state_dict = self._resolve_dtensors(layer_state_dict)
                 layer_state_dict = preprocess_layer_checkpoint(model, layer_state_dict, layer_id)
 
-                gpu_tensors = {
-                    k: v.to(f"cuda:{self.world.local_rank}", non_blocking=False)
-                    for k, v in layer_state_dict.items()
-                    if isinstance(v, Tensor) and v.numel() > 0
-                }
+                for k, v in layer_state_dict.items():
+                    if isinstance(v, Tensor) and v.numel() > 0:
+                        all_gpu_tensors[k] = v.to(f"cuda:{self.world.local_rank}", non_blocking=False)
 
-                if gpu_tensors:
-                    self._publisher.publish_layer(gpu_tensors, layer_id, step)
+            if all_gpu_tensors:
+                self._publisher.publish_weights(all_gpu_tensors, step)
+                self._publisher.mark_ready()
+                self.logger.info(
+                    f"MX broadcast complete: {len(all_gpu_tensors)} tensors published for step {step}"
+                )
 
-                del gpu_tensors
-                torch.cuda.empty_cache()
-
-            self._publisher.mark_ready()
-            self.logger.info(
-                f"MX broadcast complete: {num_layers + 1} layers published for step {step}"
-            )
+            del all_gpu_tensors
+            torch.cuda.empty_cache()
         else:
             self.logger.warning("MX unavailable, falling back to filesystem STABLE notification only")
 
