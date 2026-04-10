@@ -15,9 +15,17 @@ spec:
     metadata:
       labels:
         app: prime-rl-trainer
+      annotations:
+        networking.gke.io/default-interface: eth0
+        networking.gke.io/interfaces: |
+          [
+            {"interfaceName":"eth0","network":"default"},
+            {"interfaceName":"rdma0","network":"rdma-0"},
+            {"interfaceName":"rdma1","network":"rdma-1"},
+            {"interfaceName":"rdma2","network":"rdma-2"},
+            {"interfaceName":"rdma3","network":"rdma-3"}
+          ]
     spec:
-      hostNetwork: true
-      dnsPolicy: ClusterFirstWithHostNet
       containers:
         - name: trainer
           image: nvcr.io/nvidian/dynamo-dev/prime-rl-mx:latest
@@ -26,19 +34,27 @@ spec:
             - "@"
             - "/config/train.toml"
           securityContext:
-            privileged: true
+            capabilities:
+              add:
+                - IPC_LOCK
           resources:
             limits:
               nvidia.com/gpu: "4"
+              networking.gke.io.networks/rdma-0: "1"
+              networking.gke.io.networks/rdma-1: "1"
+              networking.gke.io.networks/rdma-2: "1"
+              networking.gke.io.networks/rdma-3: "1"
             requests:
               nvidia.com/gpu: "4"
           env:
             - name: MODEL_EXPRESS_URL
               value: "modelexpress-server.kavin.svc.cluster.local:8001"
             - name: UCX_TLS
-              value: "self,sm,rc,cuda_copy,gdr_copy,tcp"
+              value: "cuda_ipc,cuda_copy,rc"
             - name: UCX_IB_GID_INDEX
               value: "3"
+            - name: UCX_RC_TIMEOUT
+              value: "600s"
             - name: NIXL_LOG_LEVEL
               value: "INFO"
             - name: NVIDIA_GDRCOPY
@@ -54,8 +70,6 @@ spec:
               mountPath: /output
             - name: dshm
               mountPath: /dev/shm
-            - name: infiniband
-              mountPath: /dev/infiniband
       volumes:
         - name: shared-model-cache
           persistentVolumeClaim:
@@ -69,14 +83,11 @@ spec:
           emptyDir:
             medium: Memory
             sizeLimit: 64Gi
-        - name: infiniband
-          hostPath:
-            path: /dev/infiniband
-            type: Directory
       imagePullSecrets:
         - name: nvcr-imagepullsecret
       nodeSelector:
         kubernetes.io/arch: arm64
+        nvidia.com/gpu.product: NVIDIA-GB200
       tolerations:
         - key: "nvidia.com/gpu"
           operator: "Exists"
