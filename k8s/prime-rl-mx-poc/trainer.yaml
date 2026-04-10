@@ -34,9 +34,7 @@ spec:
             - "@"
             - "/config/train.toml"
           securityContext:
-            capabilities:
-              add:
-                - IPC_LOCK
+            privileged: true
           resources:
             limits:
               nvidia.com/gpu: "4"
@@ -50,15 +48,21 @@ spec:
             - name: MODEL_EXPRESS_URL
               value: "modelexpress-server.kavin.svc.cluster.local:8001"
             - name: UCX_TLS
-              value: "cuda_ipc,cuda_copy,rc"
+              value: "self,sm,rc,cuda_copy,gdr_copy,tcp"
             - name: UCX_IB_GID_INDEX
               value: "3"
-            - name: UCX_RC_TIMEOUT
-              value: "600s"
             - name: NIXL_LOG_LEVEL
               value: "INFO"
             - name: NVIDIA_GDRCOPY
               value: "1"
+            - name: OMPI_MCA_pml
+              value: "ob1"
+            - name: OMPI_MCA_btl
+              value: "tcp,self,vader"
+            - name: NCCL_SOCKET_IFNAME
+              value: "eth0"
+            - name: GLOO_SOCKET_IFNAME
+              value: "eth0"
             - name: HF_HOME
               value: "/models/hf_home"
           volumeMounts:
@@ -70,6 +74,8 @@ spec:
               mountPath: /output
             - name: dshm
               mountPath: /dev/shm
+            - name: infiniband
+              mountPath: /dev/infiniband
       volumes:
         - name: shared-model-cache
           persistentVolumeClaim:
@@ -83,6 +89,10 @@ spec:
           emptyDir:
             medium: Memory
             sizeLimit: 64Gi
+        - name: infiniband
+          hostPath:
+            path: /dev/infiniband
+            type: DirectoryOrCreate
       imagePullSecrets:
         - name: nvcr-imagepullsecret
       nodeSelector:
