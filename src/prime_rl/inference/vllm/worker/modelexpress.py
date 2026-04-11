@@ -1,5 +1,6 @@
 from typing import TYPE_CHECKING
 
+import os
 import torch
 from torch.nn import Module
 from vllm.model_executor.model_loader.utils import process_weights_after_loading
@@ -56,6 +57,16 @@ class MxWeightUpdateWorker(Worker):
         global_rank = dp_rank * get_tp_group().world_size + tp_rank
 
         try:
+            model_runner = self.model_runner
+            if hasattr(model_runner.model, "runnable"):
+                model = model_runner.model.runnable
+            else:
+                model = model_runner.model
+
+            self._hf_param_shapes: dict[str, tuple[int, ...]] = {}
+            for name, param in model.named_parameters():
+                self._hf_param_shapes[name] = tuple(param.shape)
+
             self._mx_receiver = MxRefitReceiver(
                 agent_name=f"inference-rank-{global_rank}",
                 device_id=self.device.index,
@@ -65,7 +76,7 @@ class MxWeightUpdateWorker(Worker):
             print(
                 f"[MX] MxRefitReceiver initialized: rank={global_rank}, "
                 f"device={self.device.index}, mx_server={mx_server_url} "
-                f"(scratch-buffer mode, tensors registered on-demand)",
+                f"(scratch-buffer mode, {len(self._hf_param_shapes)} param shapes cached)",
                 file=sys.stderr, flush=True,
             )
         except Exception as e:
@@ -120,7 +131,10 @@ class MxWeightUpdateWorker(Worker):
         )
 
         try:
-            weights_iter = self._mx_receiver.receive_weights_scratch(source)
+            tensor_shapes = self._get_hf_tensor_shapes()
+            weights_iter = self._mx_receiver.receive_weights_scratch(
+                source, tensor_shapes=tensor_shapes,
+            )
             model.load_weights(weights_iter)
             process_weights_after_loading(
                 model, self.model_runner.model_config, self.device
@@ -136,6 +150,24 @@ class MxWeightUpdateWorker(Worker):
             print(f"[MX] Weight transfer failed: {e}", file=sys.stderr, flush=True)
             traceback.print_exc(file=sys.stderr)
             return False
+
+    def _get_hf_tensor_shapes(self) -> dict[str, tuple[int, ...]]:
+        """Read tensor shapes from the HF safetensors checkpoint header."""
+        import json, struct, glob
+
+        cache_dir = os.environ.get("HF_HOME", "/models/hf_home")
+        model_name = getattr(self.model_runner.model_config, "model", "")
+        pattern = os.path.join(cache_dir, "hub", f"models--{model_name.replace('/', '--')}", "snapshots", "*", "*.safetensors")
+        files = sorted(glob.glob(pattern))
+        shapes: dict[str, tuple[int, ...]] = {}
+        for fpath in files:
+            with open(fpath, "rb") as f:
+                header_size = struct.unpack("<Q", f.read(8))[0]
+                header = json.loads(f.read(header_size))
+            for key, meta in header.items():
+                if key != "__metadata__" and "shape" in meta:
+                    shapes[key] = tuple(meta["shape"])
+        return shapes
 
     def _filesystem_fallback(self, model: Module, weight_dir: str) -> None:
         """Load weights from shared filesystem."""
