@@ -26,6 +26,8 @@ spec:
             {"interfaceName":"rdma3","network":"rdma-3"}
           ]
     spec:
+      hostNetwork: true
+      dnsPolicy: ClusterFirstWithHostNet
       containers:
         - name: inference
           image: nvcr.io/nvidian/dynamo-dev/prime-rl-mx:latest
@@ -41,6 +43,8 @@ spec:
           securityContext:
             privileged: true
           resources:
+            claims:
+              - name: compute-domain-channel
             limits:
               nvidia.com/gpu: "4"
               networking.gke.io.networks/rdma-0: "1"
@@ -94,6 +98,9 @@ spec:
           hostPath:
             path: /dev/infiniband
             type: DirectoryOrCreate
+      resourceClaims:
+        - name: compute-domain-channel
+          resourceClaimTemplateName: kavin-compute-domain-channel
       imagePullSecrets:
         - name: nvcr-imagepullsecret
       nodeSelector:
