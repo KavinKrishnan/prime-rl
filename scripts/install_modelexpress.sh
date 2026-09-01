@@ -7,7 +7,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 
 MODELEXPRESS_REPOSITORY="https://github.com/ai-dynamo/modelexpress.git"
-MODELEXPRESS_REF="v0.3.0"
+MODELEXPRESS_REF="7c3a6cbdb260d48da4e002d0e1e02d754505dd9c"
 REDIS_VERSION="7.4.2"
 REDIS_SHA256="4ddebbf09061cbb589011786febdb34f29767dd7f89dbe712d2b68e808af6a1f"
 
@@ -18,9 +18,11 @@ fi
 
 BIN_DIR="$PROJECT_DIR/third_party/modelexpress/bin"
 mkdir -p "$BIN_DIR"
+MODELEXPRESS_STAMP="$BIN_DIR/modelexpress-ref"
 
 if [[ -x "$BIN_DIR/modelexpress-server" ]] \
-    && "$BIN_DIR/modelexpress-server" --version 2>/dev/null | grep -q "${MODELEXPRESS_REF#v}"; then
+    && [[ -f "$MODELEXPRESS_STAMP" ]] \
+    && [[ "$(cat "$MODELEXPRESS_STAMP")" == "$MODELEXPRESS_REF" ]]; then
     echo "modelexpress-server $MODELEXPRESS_REF already installed at $BIN_DIR"
 else
     command -v cargo >/dev/null || {
@@ -33,12 +35,16 @@ else
     }
     BUILD_DIR=$(mktemp -d)
     trap 'rm -rf "$BUILD_DIR"' EXIT
-    git clone --depth 1 --branch "$MODELEXPRESS_REF" "$MODELEXPRESS_REPOSITORY" "$BUILD_DIR/modelexpress"
+    git init --quiet "$BUILD_DIR/modelexpress"
+    git -C "$BUILD_DIR/modelexpress" remote add origin "$MODELEXPRESS_REPOSITORY"
+    git -C "$BUILD_DIR/modelexpress" fetch --depth 1 origin "$MODELEXPRESS_REF"
+    git -C "$BUILD_DIR/modelexpress" checkout --quiet FETCH_HEAD
     (
         cd "$BUILD_DIR/modelexpress"
         cargo build --release --bin modelexpress-server
     )
     cp "$BUILD_DIR/modelexpress/target/release/modelexpress-server" "$BIN_DIR/"
+    printf '%s\n' "$MODELEXPRESS_REF" > "$MODELEXPRESS_STAMP"
 fi
 
 if [[ -x "$BIN_DIR/redis-server" ]] \

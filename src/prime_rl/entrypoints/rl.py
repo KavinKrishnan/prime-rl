@@ -456,7 +456,7 @@ def write_slurm_script(config: RLConfig, config_dir: Path, log_dir: Path, script
 
     nixl_broadcast = (
         config.weight_broadcast
-        if config.weight_broadcast is not None and config.weight_broadcast.type == "nixl"
+        if config.weight_broadcast is not None and config.weight_broadcast.type in ("nixl", "mx_refit")
         else None
     )
     launch_modelexpress = nixl_broadcast is not None and config.slurm.launch_modelexpress

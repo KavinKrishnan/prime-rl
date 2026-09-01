@@ -174,22 +174,6 @@ exclude = [
     "deps/prime-envs/environments/tool_use/tau3_bench",
 ]
 
-# ModelExpress 0.3.0 publishes protobuf<6 metadata, but its generated proto is
-# compatible with protobuf 6. prime-sandboxes requires protobuf>=6.31.1; keep
-# this capped to the validated protobuf major.
-[[tool.uv.dependency-metadata]]
-name = "modelexpress"
-version = "0.3.0"
-requires-dist = [
-    "grpcio>=1.66.2",
-    "huggingface_hub>=0.20.0",
-    "nixl",
-    "numpy>=1.24.0",
-    "protobuf>=5.27.0,<7.0.0",
-    "pydantic>=2.0.0",
-    "torch>=2.6.0",
-]
-
 # NIXL publishes its CUDA 12 package as a base dependency even when the
 # caller requests its CUDA 13 extra. Use the requested CUDA 13 package only.
 [[tool.uv.dependency-metadata]]
@@ -238,6 +222,7 @@ prime-kernels = false
 
 [tool.uv.sources]
 prime-rl-configs = { path = "packages/prime-rl-configs", editable = true }
+modelexpress = { git = "https://github.com/ai-dynamo/modelexpress.git", rev = "7c3a6cbdb260d48da4e002d0e1e02d754505dd9c", subdirectory = "modelexpress_client/python" }
 # prime-rl consumes `verifiers.v1` (incl. the built-in harnesses/tasksets); env tasksets
 # live under deps/{verifiers,prime-envs}/environments.
 verifiers = { path = "deps/verifiers", editable = true }

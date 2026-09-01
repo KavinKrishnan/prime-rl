@@ -24,13 +24,13 @@ class WeightWatcher:
         policy: Policy,
         observers: list[VersionObserver],
         ckpt_step: int = 0,
-        poll_interval: float = 1.0,
+        poll_interval: float | None = None,
     ) -> None:
         self.receiver = receiver
         self.policy = policy
         self.observers = observers
         self.ckpt_step = ckpt_step
-        self.poll_interval = poll_interval
+        self.poll_interval = receiver.poll_interval if poll_interval is None else poll_interval
 
         self.last_update_weights_time: float = 0.0
         self.last_wait_for_ckpt_time: float = 0.0

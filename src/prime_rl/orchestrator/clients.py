@@ -305,6 +305,8 @@ async def update_weights(
     weight_dir: Path | None,
     step: int = 0,
     on_paused: Callable[[], None] | None = None,
+    version_uid: str | None = None,
+    timeout_s: float = UPDATE_WEIGHTS_TIMEOUT_S,
 ) -> None:
     """Update weights on static inference servers.
 
@@ -323,17 +325,23 @@ async def update_weights(
     try:
         if on_paused is not None:
             on_paused()
-        await asyncio.gather(
+        results = await asyncio.gather(
             *[
                 _admin_post(
                     admin_client,
                     "/update_weights",
-                    json={"weight_dir": weight_dir_posix},
-                    timeout_s=UPDATE_WEIGHTS_TIMEOUT_S,
+                    json={"weight_dir": weight_dir_posix, "version_uid": version_uid},
+                    timeout_s=timeout_s,
                 )
                 for admin_client in admin_clients
-            ]
+            ],
+            return_exceptions=True,
         )
+        # Wait for every worker before reporting a failure. MX cannot retire the
+        # shared version while a sibling worker may still be reading from it.
+        for result in results:
+            if isinstance(result, BaseException):
+                raise result
     finally:
         await _resume_engines(admin_clients)
 
@@ -473,6 +481,25 @@ async def init_nixl_broadcast(
     await asyncio.gather(
         *[initialize(admin_client, index * workers_per_server) for index, admin_client in enumerate(admin_clients)]
     )
+
+
+async def init_mx_refit_broadcast(
+    admin_clients: list[AsyncClient],
+    host: str,
+    port: int,
+    timeout: int,
+) -> None:
+    """Initialize the MX reshard receiver on every vLLM worker."""
+
+    async def initialize(admin_client: AsyncClient) -> None:
+        await _admin_post(
+            admin_client,
+            "/init_broadcaster",
+            timeout_s=max(ADMIN_TIMEOUT_S, timeout),
+            json={"host": host, "port": port},
+        )
+
+    await asyncio.gather(*[initialize(admin_client) for admin_client in admin_clients])
 
 
 async def prefill_logprobs(openai: AsyncOpenAI, model: str, token_ids: list[int]) -> list[float]:

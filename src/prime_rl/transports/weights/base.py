@@ -117,6 +117,9 @@ class WeightReceiver(ABC):
     engines' in-process receive hooks are its data plane, reached through the
     admin clients."""
 
+    poll_interval = 1.0
+    """Seconds between checks for a newly offered version."""
+
     def __init__(
         self,
         broadcast_dir: Path,
