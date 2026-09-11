@@ -270,6 +270,8 @@ Selecting `mx_refit` without it fails immediately. Other transports do not impor
 
 The client and the ModelExpress server must be compatible. Both come from the same repository, and running a server older than the client risks `UNIMPLEMENTED` on newer control-plane calls, so build them from the same commit.
 
+The MX client must support `FSDPTrainerContext.wire_dtype_overrides`. PrimeRL passes its model's `keep_in_fp32_for_weight_transfer()` policy to preserve required FP32 tensors, such as the GLM-5 router selection bias; other weights retain BF16 transfer. Update the client before using this adapter. This controls transfer precision without changing optimizer or reduction dtypes.
+
 Weight versions use `{run_uid}.{attempt}:{step}` IDs. `run_uid` separates runs on a long-lived server; the per-offer token permits a restarted trainer to republish a step.
 
 ### Custom Templates
