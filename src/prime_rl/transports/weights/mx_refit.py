@@ -28,6 +28,7 @@ from prime_rl.orchestrator.clients import init_mx_refit_broadcast
 from prime_rl.trainer.parallel_dims import ParallelDims
 from prime_rl.transports.weights.base import SENDER_READY_MARKER, WeightReceiver, WeightSender
 from prime_rl.transports.weights.mx_phases import PhaseTimer, timed_refit
+from prime_rl.utils.mx_precision import wire_dtype_overrides
 
 RELEASE_POLL_INTERVAL = 0.05
 READY_POLL_INTERVAL = 0.1
@@ -92,10 +93,11 @@ class MXRefitWeightSender(WeightSender):
         return f"{self.config.host}:{self.config.port}"
 
     def _initialize(self, model: nn.Module) -> None:
+        tensors = model.state_dict()
         # Publishers stay unpinned because every receiver reads from every rank.
         self._client = ModelExpressTrainerClient.initialize(
             ModelExpressTrainerConfig(
-                engine_context=FSDPTrainerContext(),
+                engine_context=FSDPTrainerContext(wire_dtype_overrides=wire_dtype_overrides(model, tensors)),
                 model_name=self.model_name,
                 device_id=self.world.local_rank,
                 server_url=self.server_url,
@@ -103,7 +105,7 @@ class MXRefitWeightSender(WeightSender):
                 payload_format=WeightPayloadFormat.FULL_TENSOR,
             )
         )
-        slot = self._client.bind_tensors(model.state_dict())
+        slot = self._client.bind_tensors(tensors)
         if self.world.is_master:
             self._control = ModelExpressControlClient.connect(server_url=self.server_url)
 
